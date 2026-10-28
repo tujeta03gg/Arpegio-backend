@@ -1,0 +1,37 @@
+name: arpegio_ui
+description: "Arpegio: interfaz táctil del cyberdeck (cliente de arpegiod)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.3
+  flutter_svg: ^2.3.0
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  mocktail: ^1.0.5
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+  fonts:
+    - family: Chakra Petch
+      fonts:
+        - {asset: assets/fonts/ChakraPetch-400.ttf, weight: 400}
+        - {asset: assets/fonts/ChakraPetch-500.ttf, weight: 500}
+        - {asset: assets/fonts/ChakraPetch-600.ttf, weight: 600}
+        - {asset: assets/fonts/ChakraPetch-700.ttf, weight: 700}
+    - family: Share Tech Mono
+      fonts:
+        - {asset: assets/fonts/ShareTechMono-400.ttf}
