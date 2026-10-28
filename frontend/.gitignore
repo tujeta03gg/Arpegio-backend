@@ -49,3 +49,4 @@ app.*.map.json
 
 # Local arpegiod test setup (binary + config)
 /.local/
+/test/failures/

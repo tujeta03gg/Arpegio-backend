@@ -23,6 +23,39 @@ void main() {
     expect(t.artistId, 'a1');
   });
 
+  test('Track reads the technical fields and builds techLine', () {
+    final t = Track.fromJson({
+      ..._track,
+      'artwork_id': 'art1',
+      'format': 'flac',
+      'sample_rate': 44100,
+      'bit_depth': 16,
+      'missing': false,
+    });
+    expect(t.artworkId, 'art1');
+    expect(t.techLine, 'FLAC · 44.1 kHz · 16 bit');
+    expect(
+      Track.fromJson({..._track, 'format': 'mp3', 'bitrate_kbps': 320})
+          .techLine,
+      'MP3 · 320 kbps',
+    );
+    expect(Track.fromJson(_track).techLine, '');
+  });
+
+  test('Page and Home read the new fields', () {
+    final h = Home.fromJson({
+      'recent_albums': [
+        {'id': 'al1', 'title': 'Horizonte', 'artwork_id': 'a'},
+      ],
+      'playlists': [
+        {'id': 'p1', 'name': 'Mix', 'item_count': 3},
+      ],
+    });
+    expect(h.recentAlbums.single.artworkId, 'a');
+    expect(h.playlists.single.itemCount, 3);
+    expect(h.recentlyPlayed, isEmpty);
+  });
+
   test('PlayerState parses a missing track and defaults', () {
     final p = PlayerState.fromJson({
       'playing': true,

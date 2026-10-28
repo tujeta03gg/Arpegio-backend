@@ -84,6 +84,12 @@ final tracks = <J>[
         'track_no': i + 1,
         'duration_ms': ts[i].$2 * 1000,
         'added_at': '2026-10-01T00:00:00Z',
+        'format': aid == 'marea' ? 'mp3' : 'flac',
+        'sample_rate': 44100,
+        if (aid != 'marea') 'bit_depth': 16,
+        'bitrate_kbps': aid == 'marea' ? 320 : 900,
+        // One missing file to exercise the "Archivo no encontrado" row.
+        'missing': aid == 'ruido' && i == 2,
         'artists': [
           {'id': _artistId(artist), 'name': artist, 'role': 'main'},
         ],
@@ -251,6 +257,7 @@ J page(List<J> all, String? cursor, int limit) {
   return {
     'items': all.sublist(off, end),
     'next_cursor': end >= all.length ? '' : '$end',
+    'total': all.length,
   };
 }
 
@@ -319,7 +326,9 @@ Future<void> serveStatic(HttpRequest req) async {
     return req.response.close();
   }
   final ext = f.path.split('.').last;
-  req.response.headers.contentType = ContentType.parse(types[ext] ?? 'application/octet-stream');
+  req.response.headers.contentType = ContentType.parse(
+    types[ext] ?? 'application/octet-stream',
+  );
   await req.response.addStream(f.openRead());
   await req.response.close();
 }
@@ -436,6 +445,8 @@ Future<void> handle(HttpRequest req) async {
               'title': t['title'],
               'artist': t['artist'],
               'album': t['album'],
+              'album_id': t['album_id'],
+              'duration_ms': t['duration_ms'],
             },
         ],
         'albums': [
@@ -466,7 +477,25 @@ Future<void> handle(HttpRequest req) async {
         'recently_added': [
           for (final id in ['kilo2', 'ciber1', 'senal3']) trackOf(id),
         ],
+        'recent_albums': [
+          for (final a in _albums.take(4)) albumJson(a.$1, withTracks: false),
+        ],
+        'playlists': [for (final p in playlists) playlistJson(p)],
       });
+    case ('GET', 'version', _):
+      return send({
+        'version': 'dev-sim',
+        'commit': 'fake',
+        'go_version': 'dart',
+        'os': 'sim',
+        'arch': 'sim',
+      });
+    case ('POST', 'queue', 3) when seg[2] == 'play':
+      final at = double.parse(seg[1]).toInt() - 1;
+      if (at < 0 || at >= queue.length) return err(404, 'not_found', 'cola');
+      startTrack(at);
+      emit('queue.changed', null);
+      return send(playerJson());
     case ('GET', 'player', 1):
       return send(playerJson());
     case ('POST', 'player', 2):

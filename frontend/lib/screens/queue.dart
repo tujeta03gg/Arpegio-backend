@@ -78,7 +78,7 @@ class QueueScreen extends ConsumerWidget {
                   child: TrackRow(
                     track: it.track,
                     tag: it.priority == 1 ? S.nextTag : null,
-                    onTap: () {},
+                    onTap: () => n.play(it),
                   ),
                 ),
               );

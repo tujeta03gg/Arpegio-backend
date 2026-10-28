@@ -79,12 +79,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               children: [
                 for (final h in r.tracks)
                   TrackRow(
-                    track: Track(
-                      id: h.id,
-                      title: h.title,
-                      artist: h.artist,
-                      album: h.album,
-                    ),
+                    track: h.toTrack(),
                     onTap: () => ref
                         .read(playerProvider.notifier)
                         .playContext('track:${h.id}'),
@@ -95,7 +90,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               children: [
                 for (final h in r.albums)
                   AlbumCard(
-                    albumId: h.id,
+                    artworkId: h.artworkId,
                     title: h.title,
                     subtitle: h.artist,
                     onTap: () => nav.open(Detail(DetailKind.album, h.id)),

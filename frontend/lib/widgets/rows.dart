@@ -6,6 +6,7 @@ import '../design/chamfer.dart';
 import '../design/icons.dart';
 import '../design/tokens.dart';
 import '../design/typography.dart';
+import '../l10n/strings.dart';
 import '../state/providers.dart';
 import 'artwork.dart';
 import 'controls.dart';
@@ -38,11 +39,14 @@ class TrackRow extends ConsumerWidget {
       playerProvider.select((p) => p.track?.id == track.id),
     );
     final playing = ref.watch(playerProvider.select((p) => p.playing));
-    final sub = showAlbum && track.album.isNotEmpty
+    final missing = track.missing; // file gone: dimmed and not playable
+    final sub = missing
+        ? S.missingFile
+        : showAlbum && track.album.isNotEmpty
         ? '${track.artist} · ${track.album}'
         : track.artist;
     return Pressable(
-      onTap: onTap,
+      onTap: missing ? null : onTap,
       onLongPress: () => showTrackMenu(context, ref, track),
       scale: 1,
       pressedColor: AppColors.void200,
@@ -58,7 +62,7 @@ class TrackRow extends ConsumerWidget {
           children: [
             leading ??
                 Artwork(
-                  albumId: track.albumId,
+                  artworkId: track.artworkId,
                   seed: track.album,
                   size: AppSize.coverRow,
                 ),
@@ -82,7 +86,9 @@ class TrackRow extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppText.body.copyWith(
-                            color: isCurrent
+                            color: missing
+                                ? AppColors.inkDim
+                                : isCurrent
                                 ? AppColors.neonCyan
                                 : AppColors.ink,
                           ),
@@ -98,13 +104,15 @@ class TrackRow extends ConsumerWidget {
                     sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.bodySm.copyWith(color: AppColors.inkMuted),
+                    style: AppText.bodySm.copyWith(
+                      color: missing ? AppColors.inkDim : AppColors.inkMuted,
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: AppSpace.s3),
-            if (track.durationMs > 0)
+            if (track.durationMs > 0 && !missing)
               Text(
                 fmtTime(track.durationMs),
                 style: AppText.monoTime.copyWith(color: AppColors.inkMuted),
@@ -147,13 +155,13 @@ class TagChip extends StatelessWidget {
 class AlbumCard extends StatelessWidget {
   const AlbumCard({
     super.key,
-    required this.albumId,
+    required this.artworkId,
     required this.title,
     required this.subtitle,
     required this.onTap,
     this.seed,
   });
-  final String albumId;
+  final String artworkId;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -176,7 +184,7 @@ class AlbumCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Artwork(
-                  albumId: albumId,
+                  artworkId: artworkId,
                   seed: seed ?? title,
                   size: AppSize.cardCover,
                   chamfer: true,

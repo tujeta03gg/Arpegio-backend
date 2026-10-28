@@ -7,6 +7,7 @@ import 'package:arpegio_ui/data/api_client.dart';
 import 'package:arpegio_ui/data/events_client.dart';
 import 'package:arpegio_ui/data/models.dart';
 import 'package:arpegio_ui/state/providers.dart';
+import 'package:arpegio_ui/widgets/frame.dart' show clockProvider;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,17 +23,27 @@ class FakeChannel extends Fake implements WebSocketChannel {
   Stream<dynamic> get stream => ctl.stream;
 }
 
-Track _t(String id, String title, String album, String albumId, int sec) =>
-    Track(
-      id: id,
-      title: title,
-      artist: 'Synthwave Collective',
-      album: album,
-      albumId: albumId,
-      trackNo: 1,
-      durationMs: sec * 1000,
-      artists: const [ArtistRef(id: 'a1', name: 'Synthwave Collective')],
-    );
+Track _t(
+  String id,
+  String title,
+  String album,
+  String albumId,
+  int sec, {
+  bool missing = false,
+}) => Track(
+  id: id,
+  title: title,
+  artist: 'Synthwave Collective',
+  album: album,
+  albumId: albumId,
+  trackNo: 1,
+  durationMs: sec * 1000,
+  artists: const [ArtistRef(id: 'a1', name: 'Synthwave Collective')],
+  format: 'flac',
+  sampleRate: 44100,
+  bitDepth: 16,
+  missing: missing,
+);
 
 Future<void> _loadFonts() async {
   Future<void> load(String family, List<String> files) async {
@@ -62,7 +73,7 @@ void main() {
   final now = _t('t1', 'Noches de Neón', 'Horizonte', 'horizonte', 252);
   final others = [
     _t('t2', 'Autopista 404', 'Horizonte', 'horizonte', 221),
-    _t('t3', 'Ciudad de cristal', 'Ruido Blanco', 'ruido', 218),
+    _t('t3', 'Ciudad de cristal', 'Ruido Blanco', 'ruido', 218, missing: true),
   ];
 
   setUpAll(_loadFonts);
@@ -72,9 +83,6 @@ void main() {
     api = MockApi();
     when(() => api.baseUrl).thenReturn('http://127.0.0.1:7600');
     when(() => api.eventsUrl).thenReturn('ws://x/events');
-    when(() => api.album(any())).thenAnswer(
-      (i) async => Album(id: i.positionalArguments.first as String, title: 'A'),
-    );
     when(() => api.home()).thenAnswer(
       (_) async => Home(
         recentlyPlayed: [now, ...others],
@@ -127,8 +135,12 @@ void main() {
       overrides: [
         prefsProvider.overrideWithValue(prefs),
         apiProvider.overrideWithValue(api),
+        clockProvider.overrideWithValue(() => DateTime(2026, 10, 28, 9, 41)),
         eventsProvider.overrideWithValue(
-          EventsClient('ws://x/events', connect: (_) => channel = FakeChannel()),
+          EventsClient(
+            'ws://x/events',
+            connect: (_) => channel = FakeChannel(),
+          ),
         ),
       ],
     );
@@ -194,6 +206,7 @@ void main() {
     expect(find.text('Noches de Neón'), findsWidgets);
     expect(find.text('SONANDO AHORA'), findsOneWidget);
     expect(find.text('ARPEGIOD'), findsOneWidget);
+    expect(find.text('HORIZONTE · FLAC · 44.1 KHZ · 16 BIT'), findsOneWidget);
     await expectLater(
       find.byType(ArpegioApp),
       matchesGoldenFile('goldens/now_playing.png'),
@@ -205,6 +218,17 @@ void main() {
     await c.read(playerProvider.notifier).toggle();
     expect(c.read(playerProvider).playing, isFalse);
     verify(() => api.pause()).called(1);
+  });
+
+  testWidgets('Seek retries when the engine answers busy', (tester) async {
+    final c = await pump(tester);
+    var calls = 0;
+    when(() => api.seek(any())).thenAnswer((_) async {
+      if (++calls < 3) throw const ApiException('busy', 'loading', 503);
+    });
+    await tester.runAsync(() => c.read(playerProvider.notifier).seek(30000));
+    expect(calls, 3); // two busy answers, then success
+    expect(c.read(toastProvider), isNull);
   });
 
   testWidgets('Home, Queue, Settings and Library render (golden)', (
@@ -220,6 +244,14 @@ void main() {
         matchesGoldenFile('goldens/${d.name}.png'),
       );
     }
+  });
+
+  testWidgets('A missing file is dimmed and says so', (tester) async {
+    final c = await pump(tester);
+    c.read(navProvider.notifier).go(Dest.queue);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Archivo no encontrado'), findsOneWidget);
   });
 
   testWidgets('Offline shows the banner', (tester) async {

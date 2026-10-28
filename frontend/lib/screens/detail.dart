@@ -134,7 +134,7 @@ class _AlbumBody extends ConsumerWidget {
         subtitle:
             '${album.artist} · ${_summary(album.tracks.length, album.durationMs)}',
         cover: Artwork(
-          albumId: album.id,
+          artworkId: album.artworkId,
           seed: album.title,
           size: AppSize.coverDetail,
           chamfer: true,
@@ -181,7 +181,7 @@ class _ArtistBody extends ConsumerWidget {
           subtitle:
               '${artist.albums.length} ${artist.albums.length == 1 ? 'álbum' : 'álbumes'}',
           cover: Artwork(
-            albumId: '',
+            artworkId: '',
             seed: artist.name,
             size: AppSize.coverDetail,
             round: true,
@@ -198,7 +198,7 @@ class _ArtistBody extends ConsumerWidget {
             children: [
               for (final a in artist.albums)
                 AlbumCard(
-                  albumId: a.id,
+                  artworkId: a.artworkId,
                   title: a.title,
                   subtitle: a.year > 0 ? '${a.year}' : a.artist,
                   onTap: () => nav.open(Detail(DetailKind.album, a.id)),
@@ -236,7 +236,7 @@ class _LikedBody extends ConsumerWidget {
           tracks.fold(0, (s, t) => s + t.durationMs),
         ),
         cover: const Artwork(
-          albumId: '',
+          artworkId: '',
           seed: S.favorites,
           size: AppSize.coverDetail,
           chamfer: true,
@@ -342,7 +342,7 @@ class _PlaylistBodyState extends ConsumerState<_PlaylistBody> {
                 _items.fold(0, (s, i) => s + i.track.durationMs),
               ),
               cover: Artwork(
-                albumId: '',
+                artworkId: '',
                 seed: p.name,
                 size: AppSize.coverDetail,
                 chamfer: true,

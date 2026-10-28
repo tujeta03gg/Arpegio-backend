@@ -23,6 +23,12 @@ class Track {
     this.trackNo = 0,
     this.durationMs = 0,
     this.artists = const [],
+    this.artworkId = '',
+    this.format = '',
+    this.bitrateKbps = 0,
+    this.sampleRate = 0,
+    this.bitDepth = 0,
+    this.missing = false,
   });
   factory Track.fromJson(Json j) => Track(
     id: j['id'] as String,
@@ -33,6 +39,12 @@ class Track {
     trackNo: (j['track_no'] as num?)?.toInt() ?? 0,
     durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,
     artists: _list(j['artists'], ArtistRef.fromJson),
+    artworkId: j['artwork_id'] as String? ?? '',
+    format: j['format'] as String? ?? '',
+    bitrateKbps: (j['bitrate_kbps'] as num?)?.toInt() ?? 0,
+    sampleRate: (j['sample_rate'] as num?)?.toInt() ?? 0,
+    bitDepth: (j['bit_depth'] as num?)?.toInt() ?? 0,
+    missing: j['missing'] as bool? ?? false,
   );
   Json toJson() => {
     'id': id,
@@ -42,6 +54,12 @@ class Track {
     'album_id': albumId,
     'track_no': trackNo,
     'duration_ms': durationMs,
+    'artwork_id': artworkId,
+    'format': format,
+    'bitrate_kbps': bitrateKbps,
+    'sample_rate': sampleRate,
+    'bit_depth': bitDepth,
+    'missing': missing,
     'artists': [
       for (final a in artists) {'id': a.id, 'name': a.name},
     ],
@@ -54,6 +72,21 @@ class Track {
   final int trackNo;
   final int durationMs;
   final List<ArtistRef> artists;
+  final String artworkId; // "" = no cover
+  final String format; // flac, mp3, ...
+  final int bitrateKbps;
+  final int sampleRate; // Hz
+  final int bitDepth;
+  final bool missing; // file not found
+
+  /// "FLAC · 44.1 kHz · 16 bit", skipping what the file does not report.
+  String get techLine => [
+    if (format.isNotEmpty) format.toUpperCase(),
+    if (sampleRate > 0)
+      '${(sampleRate / 1000).toStringAsFixed(sampleRate % 1000 == 0 ? 0 : 1)} kHz',
+    if (bitDepth > 0) '$bitDepth bit',
+    if (bitDepth == 0 && bitrateKbps > 0) '$bitrateKbps kbps',
+  ].join(' · ');
 
   /// Main artist id, when the API sent one.
   String? get artistId => artists.isEmpty ? null : artists.first.id;
@@ -254,15 +287,21 @@ class Home {
     this.recentlyPlayed = const [],
     this.mostPlayed = const [],
     this.recentlyAdded = const [],
+    this.recentAlbums = const [],
+    this.playlists = const [],
   });
   factory Home.fromJson(Json j) => Home(
     recentlyPlayed: _list(j['recently_played'], Track.fromJson),
     mostPlayed: _list(j['most_played'], Track.fromJson),
     recentlyAdded: _list(j['recently_added'], Track.fromJson),
+    recentAlbums: _list(j['recent_albums'], Album.fromJson),
+    playlists: _list(j['playlists'], Playlist.fromJson),
   );
   final List<Track> recentlyPlayed;
   final List<Track> mostPlayed;
   final List<Track> recentlyAdded;
+  final List<Album> recentAlbums;
+  final List<Playlist> playlists;
 }
 
 class Hit {
@@ -271,17 +310,36 @@ class Hit {
     required this.title,
     this.artist = '',
     this.album = '',
+    this.albumId = '',
+    this.artworkId = '',
+    this.durationMs = 0,
   });
   factory Hit.fromJson(Json j) => Hit(
     id: j['id'] as String,
     title: j['title'] as String? ?? '',
     artist: j['artist'] as String? ?? '',
     album: j['album'] as String? ?? '',
+    albumId: j['album_id'] as String? ?? '',
+    artworkId: j['artwork_id'] as String? ?? '',
+    durationMs: (j['duration_ms'] as num?)?.toInt() ?? 0,
   );
   final String id;
   final String title;
   final String artist;
   final String album;
+  final String albumId;
+  final String artworkId;
+  final int durationMs;
+
+  Track toTrack() => Track(
+    id: id,
+    title: title,
+    artist: artist,
+    album: album,
+    albumId: albumId,
+    artworkId: artworkId,
+    durationMs: durationMs,
+  );
 }
 
 class SearchResult {
@@ -321,9 +379,29 @@ class Lyrics {
 }
 
 class Page<T> {
-  const Page(this.items, this.nextCursor);
+  const Page(this.items, this.nextCursor, [this.total = 0]);
   final List<T> items;
   final String nextCursor; // "" = last page
+  final int total; // whole catalog, not just this page
+}
+
+class ServerVersion {
+  const ServerVersion({
+    this.version = '',
+    this.commit = '',
+    this.os = '',
+    this.arch = '',
+  });
+  factory ServerVersion.fromJson(Json j) => ServerVersion(
+    version: j['version'] as String? ?? '',
+    commit: j['commit'] as String? ?? '',
+    os: j['os'] as String? ?? '',
+    arch: j['arch'] as String? ?? '',
+  );
+  final String version;
+  final String commit;
+  final String os;
+  final String arch;
 }
 
 /// A WebSocket frame: `{type, data, at}`.

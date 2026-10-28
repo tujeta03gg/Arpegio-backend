@@ -20,13 +20,15 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final home = ref.watch(homeProvider);
-    final lists = ref.watch(playlistsProvider).value ?? const <Playlist>[];
+    final lists =
+        home.value?.playlists ??
+        const <Playlist>[]; // /home already carries them
     final nav = ref.read(navProvider.notifier);
     Widget shelf(List<Track> ts) => Shelf(
       children: [
         for (final t in ts)
           AlbumCard(
-            albumId: t.albumId,
+            artworkId: t.artworkId,
             seed: t.album,
             title: t.title,
             subtitle: t.artist,
@@ -45,6 +47,21 @@ class HomeScreen extends ConsumerWidget {
               const SectionLabel(S.recentlyPlayed, first: true),
               shelf(h.recentlyPlayed),
             ],
+            if (h.recentAlbums.isNotEmpty) ...[
+              const SectionLabel(S.recentAlbums),
+              Shelf(
+                children: [
+                  for (final a in h.recentAlbums)
+                    AlbumCard(
+                      artworkId: a.artworkId,
+                      seed: a.title,
+                      title: a.title,
+                      subtitle: a.artist,
+                      onTap: () => nav.open(Detail(DetailKind.album, a.id)),
+                    ),
+                ],
+              ),
+            ],
             if (h.mostPlayed.isNotEmpty) ...[
               const SectionLabel(S.mostPlayed),
               shelf(h.mostPlayed),
@@ -60,14 +77,14 @@ class HomeScreen extends ConsumerWidget {
         Shelf(
           children: [
             AlbumCard(
-              albumId: '',
+              artworkId: '',
               title: S.favorites,
               subtitle: 'Me gusta',
               onTap: () => nav.open(const Detail(DetailKind.liked)),
             ),
             for (final p in lists)
               AlbumCard(
-                albumId: '',
+                artworkId: '',
                 title: p.name,
                 subtitle: 'Playlist · ${S.songCount(p.itemCount)}',
                 onTap: () => nav.open(Detail(DetailKind.playlist, p.id)),

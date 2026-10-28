@@ -30,6 +30,7 @@ class SettingsScreen extends ConsumerWidget {
     final connected = ref.watch(connectedProvider);
     final lib = ref.watch(libraryStatusProvider);
     final roots = ref.watch(rootsProvider).value ?? const <LibraryRoot>[];
+    final ver = ref.watch(versionProvider).value;
     final muted = AppText.bodySm.copyWith(color: AppColors.inkMuted);
     return ScreenScroll(
       children: [
@@ -138,7 +139,11 @@ class SettingsScreen extends ConsumerWidget {
                       style: AppText.body,
                     ),
                     Text(
-                      connected ? 'Conectado' : 'Sin conexión',
+                      [
+                        connected ? 'Conectado' : 'Sin conexión',
+                        if (ver != null)
+                          'v${ver.version}${ver.commit.isEmpty ? '' : ' (${ver.commit})'}',
+                      ].join(' · '),
                       style: muted,
                     ),
                   ],

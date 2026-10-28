@@ -22,6 +22,7 @@ abstract final class S {
   static const noConnection = 'Sin conexión con arpegiod. Reintentando…';
   static const searchHint = 'Canciones, artistas, álbumes';
   static const recentlyPlayed = 'Escuchado recientemente';
+  static const recentAlbums = 'Álbumes recientes';
   static const mostPlayed = 'Más escuchado';
   static const recentlyAdded = 'Agregadas recientemente';
   static const yourPlaylists = 'Tus playlists';
@@ -71,6 +72,8 @@ abstract final class S {
   static const addedPlaylist = 'Agregada a la playlist';
   static const failed = 'No se pudo completar la acción';
   static const notFound = 'Esta canción ya no está en la biblioteca';
+  static const busy =
+      'El reproductor está cargando la canción, intenta de nuevo';
   static const unavailable = 'El reproductor no está disponible';
 
   static String greeting(int hour) => hour < 12

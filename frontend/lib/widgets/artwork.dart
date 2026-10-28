@@ -5,18 +5,18 @@ import '../design/chamfer.dart';
 import '../design/tokens.dart';
 import '../state/providers.dart';
 
-/// Cover of an album: `/artwork/{id}?size=` or, without artwork, the cover generated from [seed].
+/// Cover of a track or album: `/artwork/{id}?size=` or, without artwork, the cover generated from [seed].
 class Artwork extends ConsumerWidget {
   const Artwork({
     super.key,
-    required this.albumId,
+    required this.artworkId,
     required this.seed,
     required this.size,
     this.chamfer = false,
     this.radius = AppRadius.sm,
     this.round = false,
   });
-  final String albumId;
+  final String artworkId; // "" = no cover
   final String seed; // album title
   final double size;
   final bool chamfer;
@@ -25,27 +25,19 @@ class Artwork extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final id = ref.watch(artworkIdProvider(albumId));
     final generated = GeneratedArt(seed: seed, size: size);
-    final Widget img = id.when(
-      data: (art) => art.isEmpty
-          ? generated
-          : Image.network(
-              ref.read(apiProvider).artworkUrl(art, size <= 96 ? 96 : 300),
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              cacheWidth: size.round(),
-              cacheHeight: size.round(),
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) => generated,
-            ),
-      loading: () => SizedBox.square(
-        dimension: size,
-        child: const ColoredBox(color: AppColors.void200),
-      ),
-      error: (_, _) => generated,
-    );
+    final Widget img = artworkId.isEmpty
+        ? generated
+        : Image.network(
+            ref.read(apiProvider).artworkUrl(artworkId, size <= 96 ? 96 : 300),
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            cacheWidth: size.round(),
+            cacheHeight: size.round(),
+            gaplessPlayback: true,
+            errorBuilder: (_, _, _) => generated,
+          );
     final boxed = SizedBox.square(dimension: size, child: img);
     if (chamfer) return Chamfered(child: boxed);
     if (round) return ClipOval(child: boxed);

@@ -43,7 +43,12 @@ class ArtistRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Artwork(albumId: '', seed: name, size: AppSize.coverRow, round: true),
+          Artwork(
+            artworkId: '',
+            seed: name,
+            size: AppSize.coverRow,
+            round: true,
+          ),
           const SizedBox(width: AppSpace.s3),
           Expanded(
             child: Column(
@@ -117,23 +122,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final nav = ref.read(navProvider.notifier);
-    final (count, more) = switch (_tab) {
-      _Tab.songs => (
-        ref.watch(tracksProvider).items.length,
-        !ref.watch(tracksProvider).done,
-      ),
-      _Tab.albums => (
-        ref.watch(albumsProvider).items.length,
-        !ref.watch(albumsProvider).done,
-      ),
-      _Tab.artists => (
-        ref.watch(artistsProvider).items.length,
-        !ref.watch(artistsProvider).done,
-      ),
-      _Tab.playlists => (
-        ref.watch(playlistsProvider).value?.length ?? 0,
-        false,
-      ),
+    // `total` counts the whole catalog; fall back to what is loaded if the API omits it.
+    int total(PagedState<Object?> p) => p.total > 0 ? p.total : p.items.length;
+    final count = switch (_tab) {
+      _Tab.songs => total(ref.watch(tracksProvider)),
+      _Tab.albums => total(ref.watch(albumsProvider)),
+      _Tab.artists => total(ref.watch(artistsProvider)),
+      _Tab.playlists => ref.watch(playlistsProvider).value?.length ?? 0,
     };
     final unit = switch (_tab) {
       _Tab.songs => 'CANCIONES',
@@ -154,7 +149,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           ScreenHeader(
             S.library,
             trailing: Text(
-              '${fmtCount(count)}${more ? '+' : ''} $unit',
+              '${fmtCount(count)} $unit',
               style: AppText.monoStatus.copyWith(color: AppColors.inkMuted),
             ),
           ),
@@ -227,7 +222,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       itemBuilder: (_, i) {
         final a = s.items[i];
         return AlbumCard(
-          albumId: a.id,
+          artworkId: a.artworkId,
           title: a.title,
           subtitle: a.artist,
           onTap: () => nav.open(Detail(DetailKind.album, a.id)),

@@ -34,7 +34,7 @@ class NowPlayingScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Artwork(
-            albumId: t.albumId,
+            artworkId: t.artworkId,
             seed: t.album,
             size: AppSize.coverNow,
             chamfer: true,
@@ -96,9 +96,11 @@ class NowPlayingScreen extends ConsumerWidget {
                     style: AppText.bodyLg.copyWith(color: AppColors.inkMuted),
                   ),
                   const SizedBox(height: AppSpace.s1),
-                  // The API sends no codec/bitrate yet, so the technical line is just the album.
                   Text(
-                    t.album.toUpperCase(),
+                    [
+                      t.album,
+                      if (t.techLine.isNotEmpty) t.techLine,
+                    ].join(' · ').toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.monoStatus.copyWith(

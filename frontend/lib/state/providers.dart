@@ -52,6 +52,7 @@ final toastProvider = NotifierProvider<ToastNotifier, String?>(
 String friendlyError(Object e) {
   if (e is ApiException) {
     if (e.isNotFound) return S.notFound;
+    if (e.code == 'busy') return S.busy;
     if (e.status == 503) return S.unavailable;
   }
   return S.failed;
@@ -135,11 +136,20 @@ class PlayerNotifier extends Notifier<PlayerState> {
   Future<void> next() => _plain(_api.next);
   Future<void> previous() => _plain(_api.previous);
 
+  /// The engine answers 503 `busy` while a track is still opening: retry twice (400 ms apart)
+  /// before bothering the user.
   Future<void> _plain(Future<void> Function() call) async {
-    try {
-      await call();
-    } on ApiException catch (e) {
-      ref.read(toastProvider.notifier).error(e);
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await call();
+      } on ApiException catch (e) {
+        if (e.code == 'busy' && attempt < 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          continue;
+        }
+        ref.read(toastProvider.notifier).error(e);
+        return;
+      }
     }
   }
 
@@ -232,6 +242,9 @@ class QueueNotifier extends Notifier<QueueState> {
   }
 
   Future<void> clear() => _do(_api.queueClear);
+
+  /// Jumps to this item and plays it; `queue.changed` and `player.track_started` follow.
+  Future<void> play(QueueItem it) => _do(() => _api.queuePlay(it.position));
 }
 
 final queueProvider = NotifierProvider<QueueNotifier, QueueState>(
@@ -322,6 +335,10 @@ void dispatchEvent(Ref ref, EventFrame f) {
           .read(libraryStatusProvider.notifier)
           .set(LibraryStatus.fromJson(d['library'] as Json));
       ref.read(likesProvider.notifier).refresh();
+      // A (re)connect may mean a different daemon or database: reload every list.
+      ref.read(catalogRevProvider.notifier).bump();
+      ref.read(playlistRevProvider.notifier).bump();
+      ref.read(rootsRevProvider.notifier).bump();
     case 'player.state_changed':
       ref.read(playerProvider.notifier).set(PlayerState.fromJson(d));
     case 'player.position':
@@ -422,11 +439,13 @@ class PagedState<T> {
     this.cursor = '',
     this.loading = false,
     this.done = false,
+    this.total = 0,
   });
   final List<T> items;
   final String cursor;
   final bool loading;
   final bool done;
+  final int total; // whole catalog, as reported by the API
 }
 
 /// Cursor-paginated list, reset whenever the catalog changes.
@@ -444,7 +463,12 @@ class PagedNotifier<T> extends Notifier<PagedState<T>> {
   Future<void> loadMore() async {
     if (!ref.mounted || state.loading || state.done) return;
     final cur = state;
-    state = PagedState(items: cur.items, cursor: cur.cursor, loading: true);
+    state = PagedState(
+      items: cur.items,
+      cursor: cur.cursor,
+      loading: true,
+      total: cur.total,
+    );
     try {
       final p = await _fetch(ref.read(apiProvider), cur.cursor);
       if (!ref.mounted) return;
@@ -452,10 +476,16 @@ class PagedNotifier<T> extends Notifier<PagedState<T>> {
         items: [...cur.items, ...p.items],
         cursor: p.nextCursor,
         done: p.nextCursor.isEmpty,
+        total: p.total,
       );
     } on ApiException {
       if (ref.mounted) {
-        state = PagedState(items: cur.items, cursor: cur.cursor, done: true);
+        state = PagedState(
+          items: cur.items,
+          cursor: cur.cursor,
+          done: true,
+          total: cur.total,
+        );
       }
     }
   }
@@ -515,22 +545,13 @@ final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>(
   (ref, trackId) => ref.watch(apiProvider).lyrics(trackId),
 );
 
+final versionProvider = FutureProvider.autoDispose<ServerVersion>(
+  (ref) => ref.watch(apiProvider).version(),
+);
+
 final rootsProvider = FutureProvider.autoDispose<List<LibraryRoot>>((ref) {
   ref.watch(rootsRevProvider);
   return ref.watch(apiProvider).roots();
-});
-
-/// Tracks carry only `album_id`; the cover id lives on the album (see docs/huecos-api.md).
-final artworkIdProvider = FutureProvider.family<String, String>((
-  ref,
-  albumId,
-) async {
-  if (albumId.isEmpty) return '';
-  try {
-    return (await ref.watch(apiProvider).album(albumId)).artworkId;
-  } on ApiException {
-    return '';
-  }
 });
 
 class SearchQueryNotifier extends Notifier<String> {

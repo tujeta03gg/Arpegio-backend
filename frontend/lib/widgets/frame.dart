@@ -37,15 +37,18 @@ final batteryProvider = StreamProvider<int?>((ref) async* {
 });
 
 /// Wall clock "HH:MM" that refreshes on the minute.
-class ClockText extends StatefulWidget {
+class ClockText extends ConsumerStatefulWidget {
   const ClockText({super.key});
   @override
-  State<ClockText> createState() => _ClockTextState();
+  ConsumerState<ClockText> createState() => _ClockTextState();
 }
 
-class _ClockTextState extends State<ClockText> {
+/// Source of "now"; tests override it to keep goldens stable.
+final clockProvider = Provider<DateTime Function()>((_) => DateTime.now);
+
+class _ClockTextState extends ConsumerState<ClockText> {
   Timer? _t;
-  DateTime _now = DateTime.now();
+  late DateTime _now = ref.read(clockProvider)();
 
   @override
   void initState() {
@@ -54,10 +57,10 @@ class _ClockTextState extends State<ClockText> {
   }
 
   void _schedule() {
-    final n = DateTime.now();
+    final n = ref.read(clockProvider)();
     _t = Timer(Duration(seconds: 61 - n.second), () {
       if (!mounted) return;
-      setState(() => _now = DateTime.now());
+      setState(() => _now = ref.read(clockProvider)());
       _schedule();
     });
   }
@@ -250,7 +253,7 @@ class MiniPlayer extends ConsumerWidget {
                     onTap: open,
                     label: 'Abrir Reproduciendo',
                     child: Artwork(
-                      albumId: t.albumId,
+                      artworkId: t.artworkId,
                       seed: t.album,
                       size: AppSize.coverMini,
                     ),

@@ -102,6 +102,8 @@ class ApiClient {
   );
   Future<Lyrics> lyrics(String trackId) async =>
       Lyrics.fromJson(await _obj('GET', '/tracks/$trackId/lyrics'));
+  Future<ServerVersion> version() async =>
+      ServerVersion.fromJson(await _obj('GET', '/version'));
   Future<Home> home() async => Home.fromJson(await _obj('GET', '/home'));
 
   // Player
@@ -133,6 +135,8 @@ class ApiClient {
       _send('POST', '/queue', body: {'track_ids': trackIds, 'next': next});
   Future<void> queueMove(double position, int index) =>
       _send('PATCH', '/queue/${_pos(position)}', body: {'index': index});
+  Future<void> queuePlay(double position) =>
+      _send('POST', '/queue/${_pos(position)}/play');
   Future<void> queueRemove(double position) =>
       _send('DELETE', '/queue/${_pos(position)}');
   Future<void> queueClear() => _send('DELETE', '/queue');
@@ -188,9 +192,11 @@ class ApiClient {
   static List<Json> _items(Json j) => [
     for (final e in (j['items'] as List? ?? const [])) e as Json,
   ];
-  static Page<T> _page<T>(Json j, T Function(Json) f) => Page([
-    for (final e in _items(j)) f(e),
-  ], j['next_cursor'] as String? ?? '');
+  static Page<T> _page<T>(Json j, T Function(Json) f) => Page(
+    [for (final e in _items(j)) f(e)],
+    j['next_cursor'] as String? ?? '',
+    (j['total'] as num?)?.toInt() ?? 0,
+  );
 
   void close() => _http.close();
 }
