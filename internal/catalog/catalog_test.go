@@ -38,8 +38,8 @@ func (e *env) add(info metadata.Info) string {
 	e.t.Helper()
 	e.n++
 	fid := store.NewID()
-	_, err := e.st.W.Exec(`INSERT INTO files(id, root_id, rel_path, content_hash, size_bytes, mtime, format, duration_ms)
-		VALUES (?, 'r', ?, ?, 1, 't', 'mp3', 1000)`, fid, info.Title+string(rune('a'+e.n)), fid)
+	_, err := e.st.W.Exec(`INSERT INTO files(id, root_id, rel_path, content_hash, size_bytes, mtime, format, bitrate_kbps, sample_rate, bit_depth, duration_ms)
+		VALUES (?, 'r', ?, ?, 1, 't', 'flac', 1011, 44100, 16, 1000)`, fid, info.Title+string(rune('a'+e.n)), fid)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -256,5 +256,123 @@ func TestDetailsAndMissingFilesHidden(t *testing.T) {
 	}
 	if _, err := e.svc.Album(ctx, "nope"); !errors.Is(err, apperr.ErrNotFound) {
 		t.Errorf("album not found: %v", err)
+	}
+}
+
+func TestTrackCarriesTechnicalInfoCoverAndMissingFlag(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.st.W.Exec(`INSERT INTO artwork(id, hash, cache_path) VALUES ('art1', 'h', '/c/h.jpg')`)
+	fid := store.NewID()
+	e.st.W.Exec(`INSERT INTO files(id, root_id, rel_path, content_hash, size_bytes, mtime, format, bitrate_kbps, sample_rate, bit_depth, duration_ms)
+		VALUES (?, 'r', 'x', 'hx', 1, 't', 'flac', 1011, 96000, 24, 1000)`, fid)
+	var id string
+	err := e.st.Tx(ctx, func(tx *sql.Tx) (err error) {
+		id, err = e.svc.UpsertTrack(ctx, tx, TrackInput{FileID: fid, ArtworkID: "art1", Info: info("Hi-Res", "Band", "LP")})
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tr, err := e.svc.Track(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.ArtworkID != "art1" || tr.Format != "flac" || tr.BitrateKbps != 1011 || tr.SampleRate != 96000 || tr.BitDepth != 24 || tr.Missing {
+		t.Fatalf("track = %+v", tr)
+	}
+	page, _ := e.svc.Tracks(ctx, "", 10)
+	if len(page.Items) != 1 || page.Items[0].ArtworkID != "art1" || page.Items[0].SampleRate != 96000 {
+		t.Errorf("list rows must carry the same fields: %+v", page.Items)
+	}
+	al, _ := e.svc.Album(ctx, tr.AlbumID)
+	if al.Tracks[0].Format != "flac" || al.Tracks[0].ArtworkID != "art1" {
+		t.Errorf("album tracks = %+v", al.Tracks)
+	}
+
+	// a vanished file keeps its track readable, flagged as missing
+	e.st.W.Exec(`UPDATE files SET missing = 1 WHERE id = ?`, fid)
+	tr, _ = e.svc.Track(ctx, id)
+	if !tr.Missing {
+		t.Error("missing flag not reported")
+	}
+
+	// a track without any album has no cover
+	plain := e.add(info("Loose", "Solo", ""))
+	if tr, _ := e.svc.Track(ctx, plain); tr.ArtworkID != "" || tr.Format != "flac" {
+		t.Errorf("loose track = %+v", tr)
+	}
+}
+
+func TestListsReportTheirTotal(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for _, n := range []string{"a", "b", "c", "d", "e"} {
+		e.add(info(n, "Artist "+n, "Album "+n))
+	}
+	tracks, _ := e.svc.Tracks(ctx, "", 2)
+	artists, _ := e.svc.Artists(ctx, "", 2)
+	albums, _ := e.svc.Albums(ctx, "", 2)
+	if len(tracks.Items) != 2 || tracks.Total != 5 || artists.Total != 5 || albums.Total != 5 {
+		t.Errorf("totals = %d/%d/%d (page of %d)", tracks.Total, artists.Total, albums.Total, len(tracks.Items))
+	}
+	// a missing file leaves the track total, like it leaves the list
+	e.st.W.Exec(`UPDATE files SET missing = 1 WHERE id = (SELECT file_id FROM tracks LIMIT 1)`)
+	if p, _ := e.svc.Tracks(ctx, "", 10); p.Total != 4 || len(p.Items) != 4 {
+		t.Errorf("after a file went missing: total=%d items=%d", p.Total, len(p.Items))
+	}
+}
+
+func TestSearchHitsCarryAlbumDurationAndCover(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.st.W.Exec(`INSERT INTO artwork(id, hash, cache_path) VALUES ('art1', 'h', '/c/h.jpg')`)
+	fid := store.NewID()
+	e.st.W.Exec(`INSERT INTO files(id, root_id, rel_path, content_hash, size_bytes, mtime, format, duration_ms) VALUES (?, 'r', 'x', 'hx', 1, 't', 'mp3', 215000)`, fid)
+	err := e.st.Tx(ctx, func(tx *sql.Tx) error {
+		in := info("Ingrata", "Café Tacvba", "Re")
+		in.DurationMS = 215000
+		_, err := e.svc.UpsertTrack(ctx, tx, TrackInput{FileID: fid, ArtworkID: "art1", Info: in})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := e.svc.Search(ctx, "ingrata", []string{"track"}, 5)
+	if err != nil || len(hits["track"]) != 1 {
+		t.Fatalf("hits = %v %v", hits, err)
+	}
+	h := hits["track"][0]
+	if h.AlbumID == "" || h.DurationMS != 215000 || h.ArtworkID != "art1" {
+		t.Errorf("track hit = %+v", h)
+	}
+	albums, _ := e.svc.Search(ctx, "re", []string{"album"}, 5)
+	if len(albums["album"]) != 1 || albums["album"][0].ArtworkID != "art1" {
+		t.Errorf("album hit = %+v", albums["album"])
+	}
+}
+
+func TestRecentAlbumsOrderedByNewestTrack(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.add(info("a1", "X", "Old album"))
+	e.add(info("b1", "Y", "New album"))
+	e.add(info("a2", "X", "Old album")) // a later track bumps its album to the top
+	for title, at := range map[string]string{"a1": "2026-01-01T00:00:01Z", "b1": "2026-01-01T00:00:02Z", "a2": "2026-01-01T00:00:03Z"} {
+		e.st.W.Exec(`UPDATE tracks SET added_at = ? WHERE title = ?`, at, title)
+	}
+	got, err := e.svc.RecentAlbums(ctx, 10)
+	if err != nil || len(got) != 2 || got[0].Title != "Old album" || got[1].Title != "New album" || got[0].Artist != "X" {
+		t.Fatalf("recent albums = %+v %v", got, err)
+	}
+	if got, _ := e.svc.RecentAlbums(ctx, 1); len(got) != 1 {
+		t.Errorf("limit not applied: %d", len(got))
+	}
+	// albums whose files are all gone drop out
+	e.st.W.Exec(`UPDATE files SET missing = 1`)
+	if got, _ := e.svc.RecentAlbums(ctx, 10); len(got) != 0 {
+		t.Errorf("missing albums listed: %+v", got)
 	}
 }

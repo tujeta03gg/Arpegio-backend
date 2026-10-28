@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,8 +39,16 @@ func TestDefaultPathsHonorXDG(t *testing.T) {
 func TestDefaultPathsWithoutRuntimeDirHaveNoSockets(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	p, _ := DefaultPaths()
-	if p.Socket != "" || p.MPVSocket != "" {
-		t.Errorf("sockets should be empty: %+v", p)
+	if p.Socket != "" {
+		t.Errorf("the API socket needs a runtime dir: %+v", p)
+	}
+	// mpv still needs an IPC endpoint: a named pipe on Windows, nothing elsewhere
+	wantMPV := ""
+	if runtime.GOOS == "windows" {
+		wantMPV = windowsMPVPipe
+	}
+	if p.MPVSocket != wantMPV {
+		t.Errorf("MPVSocket = %q, want %q", p.MPVSocket, wantMPV)
 	}
 }
 

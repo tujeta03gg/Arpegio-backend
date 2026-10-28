@@ -22,6 +22,7 @@ type Player interface {
 	SetShuffle(ctx context.Context, on bool) error
 	SetRepeat(ctx context.Context, mode string) error
 	Resolve(ctx context.Context, spec string) (playback.PlayContext, error)
+	PlayQueueItem(ctx context.Context, position float64) error
 }
 
 // Queue is the part of queue.Service the API uses.
@@ -71,6 +72,7 @@ func (s *Server) playerRoutes() {
 	s.add("GET /queue", s.getQueue)
 	s.add("POST /queue", s.addToQueue)
 	s.add("PATCH /queue/{position}", s.moveQueueItem)
+	s.add("POST /queue/{position}/play", s.playQueueItem)
 	s.add("DELETE /queue/{position}", s.removeQueueItem)
 	s.add("DELETE /queue", s.clearQueue)
 }
@@ -288,4 +290,13 @@ func (s *Server) clearQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.getQueue(w, r)
+}
+
+// playQueueItem jumps to an item of the queue (for example one under "up next") and plays it.
+func (s *Server) playQueueItem(w http.ResponseWriter, r *http.Request) {
+	pos, err := parsePosition(r)
+	if err == nil {
+		err = s.Player.PlayQueueItem(r.Context(), pos)
+	}
+	s.reply(w, r, err)
 }

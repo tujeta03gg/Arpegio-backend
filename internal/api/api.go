@@ -31,6 +31,7 @@ type Catalog interface {
 	GenreTracks(ctx context.Context, id string) ([]catalog.Track, error)
 	Search(ctx context.Context, text string, kinds []string, limit int) (map[string][]catalog.Hit, error)
 	RecentTracks(ctx context.Context, limit int) ([]catalog.Track, error)
+	RecentAlbums(ctx context.Context, limit int) ([]catalog.Album, error)
 }
 
 // Library is the part of library.Service the API uses.
@@ -47,16 +48,18 @@ type Library interface {
 
 // Deps are the services the server needs.
 type Deps struct {
-	Ctx       context.Context // lifetime of background work such as scans
-	Catalog   Catalog
-	Library   Library
-	Player    Player
-	Queue     Queue
-	Events    Events
-	Playlists Playlists
-	History   History
-	Lyrics    Lyrics
-	Jobs      interface {
+	Ctx         context.Context // lifetime of background work such as scans
+	Catalog     Catalog
+	Library     Library
+	AllowOrigin string // CORS origin, "" = off
+	WebDir      string // built web frontend to serve at /, "" = off
+	Player      Player
+	Queue       Queue
+	Events      Events
+	Playlists   Playlists
+	History     History
+	Lyrics      Lyrics
+	Jobs        interface {
 		Open(ctx context.Context) (int, error)
 	} // optional: pending background work
 	Log *slog.Logger
@@ -113,6 +116,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc(prefix+"/", func(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, apperr.ErrNotFound)
 	})
+	if s.WebDir != "" {
+		mux.Handle("/", webApp(s.WebDir))
+	}
+	if s.AllowOrigin != "" {
+		return withCORS(s.AllowOrigin, mux)
+	}
 	return mux
 }
 
@@ -145,6 +154,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		status, code, msg = http.StatusConflict, "conflict", err.Error()
 	case errors.Is(err, playback.ErrNotConnected):
 		status, code, msg = http.StatusServiceUnavailable, "unavailable", "audio engine (mpv) is not running"
+	case errors.Is(err, playback.ErrBusy):
+		status, code, msg = http.StatusServiceUnavailable, "busy", "the audio engine is busy (still loading the track); try again in a moment"
 	default:
 		s.Log.Error("api: request failed", slog.String("method", r.Method), slog.String("path", r.URL.Path), slog.Any("err", err))
 	}
@@ -185,4 +196,5 @@ func queryInt(r *http.Request, key string, def int) (int, error) {
 type Paged[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"next_cursor"`
+	Total      int    `json:"total"`
 }

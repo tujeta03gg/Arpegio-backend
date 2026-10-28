@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -58,6 +59,8 @@ func DefaultPaths() (Paths, error) {
 	if rt := os.Getenv("XDG_RUNTIME_DIR"); rt != "" {
 		p.Socket = filepath.Join(rt, "arpegio.sock")
 		p.MPVSocket = filepath.Join(rt, "arpegio-mpv.sock")
+	} else if runtime.GOOS == "windows" {
+		p.MPVSocket = windowsMPVPipe // mpv uses named pipes on Windows
 	}
 	return p, nil
 }
@@ -185,7 +188,7 @@ func New(ctx context.Context, cfg config.Config, paths Paths, log *slog.Logger) 
 		Engine: engine, Queue: a.Queue, Tracks: trackSource{cat, lib}, History: a.History, Radio: a.Radio,
 		Contexts: a.contexts(), Store: st, Bus: bus, Output: cfg.Playback.AudioOutput, Log: log,
 	})
-	a.API = api.New(api.Deps{Ctx: ctx, Catalog: cat, Library: lib, Player: a.Player, Queue: a.Queue, Events: bus, Playlists: a.Lists, History: a.History, Jobs: a.Jobs, Lyrics: a.Lyrics, Log: log})
+	a.API = api.New(api.Deps{AllowOrigin: cfg.API.AllowOrigin, WebDir: cfg.API.WebDir, Ctx: ctx, Catalog: cat, Library: lib, Player: a.Player, Queue: a.Queue, Events: bus, Playlists: a.Lists, History: a.History, Jobs: a.Jobs, Lyrics: a.Lyrics, Log: log})
 
 	for _, root := range cfg.Library.Roots {
 		if _, err := lib.AddRoot(ctx, root); err != nil {
@@ -348,3 +351,6 @@ func (idleEngine) Seek(context.Context, int64) error               { return play
 func (idleEngine) SetVolume(context.Context, int) error            { return playback.ErrNotConnected }
 func (idleEngine) Stop(context.Context) error                      { return playback.ErrNotConnected }
 func (idleEngine) Events() <-chan playback.EngineEvent             { return nil }
+
+// windowsMPVPipe is the named pipe mpv listens on when there is no runtime directory (Windows).
+const windowsMPVPipe = `\\.\pipe\arpegio-mpv`

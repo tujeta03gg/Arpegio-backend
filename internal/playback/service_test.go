@@ -25,6 +25,7 @@ type fakeEngine struct {
 	calls   []string
 	events  chan EngineEvent
 	failOn  map[string]error // path -> error returned by Load
+	seekErr error            // returned by Seek when set
 	loadErr error
 }
 
@@ -48,7 +49,13 @@ func (f *fakeEngine) Preload(_ context.Context, path string) error {
 }
 func (f *fakeEngine) ClearPreload(context.Context) error       { f.rec("clearpreload"); return nil }
 func (f *fakeEngine) SetPause(_ context.Context, p bool) error { f.rec("pause:%v", p); return nil }
-func (f *fakeEngine) Seek(_ context.Context, ms int64) error   { f.rec("seek:%d", ms); return nil }
+func (f *fakeEngine) Seek(_ context.Context, ms int64) error {
+	if f.seekErr != nil {
+		return f.seekErr
+	}
+	f.rec("seek:%d", ms)
+	return nil
+}
 func (f *fakeEngine) SetVolume(_ context.Context, l int) error { f.rec("volume:%d", l); return nil }
 func (f *fakeEngine) Stop(context.Context) error               { f.rec("stop"); return nil }
 func (f *fakeEngine) Events() <-chan EngineEvent               { return f.events }
@@ -648,5 +655,68 @@ func TestEngineRestartPutsTheCurrentTrackBack(t *testing.T) {
 	is(t, e.eng.take(), "volume:55 | load:t1@20000 paused=false | preload:t2")
 	if st := e.state(); st.TrackID != "t1" || !st.Playing {
 		t.Errorf("state = %+v", st)
+	}
+}
+
+func TestPlayQueueItemJumpsAndPlays(t *testing.T) {
+	e := newEnv(t)
+	e.play("album:A1") // t1..t6, t1 playing
+	e.queue.Add(e.ctx, []string{"t9"}, true)
+	st, _ := e.queue.State(e.ctx)
+	var pos float64
+	for _, it := range st.Items {
+		if it.TrackID == "t9" {
+			pos = it.Position
+		}
+	}
+	e.listen(0, 4000)
+	e.eng.take()
+
+	if err := e.svc.PlayQueueItem(e.ctx, pos); err != nil {
+		t.Fatal(err)
+	}
+	is(t, e.eng.take(), "load:t9@0 paused=false | preload:t2")
+	if got := e.state(); got.TrackID != "t9" || !got.Playing {
+		t.Fatalf("state = %+v", got)
+	}
+	if p := e.plays(); len(p) != 1 || p[0].TrackID != "t1" || !p[0].Skipped {
+		t.Errorf("the track left behind counts as a skip: %+v", p)
+	}
+
+	if err := e.svc.PlayQueueItem(e.ctx, 99999); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("unknown position: %v", err)
+	}
+	if e.state().TrackID != "t9" || e.eng.take() != "" {
+		t.Error("a failed jump must not touch playback")
+	}
+}
+
+// A seek the engine refuses (mpv still opening the file) is reported, changes nothing, and
+// leaves the player usable: the next command must not be stuck behind it.
+func TestRefusedSeekLeavesThePlayerUsable(t *testing.T) {
+	e := newEnv(t)
+	e.play("album:A1")
+	e.listen(0, 5000)
+	e.eng.take()
+
+	e.eng.seekErr = fmt.Errorf("%w: mpv: seek: error running command", ErrBusy)
+	err := e.svc.Seek(e.ctx, 40000)
+	if !errors.Is(err, ErrBusy) {
+		t.Fatalf("err = %v, want ErrBusy", err)
+	}
+	if st := e.state(); st.PositionMS != 5000 || st.TrackID != "t1" || !st.Playing {
+		t.Errorf("a refused seek must not move the position: %+v", st)
+	}
+
+	e.eng.seekErr = nil
+	done := make(chan error, 1)
+	go func() { done <- e.svc.Seek(e.ctx, 40000) }()
+	select {
+	case err := <-done:
+		if err != nil || e.state().PositionMS != 40000 {
+			t.Errorf("retry: %v %+v", err, e.state())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the player is stuck after a refused seek")
 	}
 }

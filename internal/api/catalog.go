@@ -18,17 +18,23 @@ type ArtistRefDTO struct {
 }
 
 type TrackDTO struct {
-	ID         string         `json:"id"`
-	Title      string         `json:"title"`
-	Artist     string         `json:"artist"`
-	Album      string         `json:"album"`
-	AlbumID    string         `json:"album_id,omitempty"`
-	DiscNo     int            `json:"disc_no,omitempty"`
-	TrackNo    int            `json:"track_no,omitempty"`
-	DurationMS int64          `json:"duration_ms"`
-	BPM        int            `json:"bpm,omitempty"`
-	AddedAt    string         `json:"added_at"`
-	Artists    []ArtistRefDTO `json:"artists,omitempty"`
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Artist      string         `json:"artist"`
+	Album       string         `json:"album"`
+	AlbumID     string         `json:"album_id,omitempty"`
+	DiscNo      int            `json:"disc_no,omitempty"`
+	TrackNo     int            `json:"track_no,omitempty"`
+	DurationMS  int64          `json:"duration_ms"`
+	BPM         int            `json:"bpm,omitempty"`
+	AddedAt     string         `json:"added_at"`
+	ArtworkID   string         `json:"artwork_id,omitempty"`
+	Format      string         `json:"format,omitempty"`
+	BitrateKbps int            `json:"bitrate_kbps,omitempty"`
+	SampleRate  int            `json:"sample_rate,omitempty"`
+	BitDepth    int            `json:"bit_depth,omitempty"`
+	Missing     bool           `json:"missing"`
+	Artists     []ArtistRefDTO `json:"artists,omitempty"`
 }
 
 type AlbumDTO struct {
@@ -54,15 +60,19 @@ type GenreDTO struct {
 }
 
 type HitDTO struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Artist string `json:"artist,omitempty"`
-	Album  string `json:"album,omitempty"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist,omitempty"`
+	Album      string `json:"album,omitempty"`
+	AlbumID    string `json:"album_id,omitempty"`
+	ArtworkID  string `json:"artwork_id,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
 }
 
 func trackDTO(t catalog.Track) TrackDTO {
 	d := TrackDTO{ID: t.ID, Title: t.Title, Artist: t.Artist, Album: t.Album, AlbumID: t.AlbumID, DiscNo: t.DiscNo,
-		TrackNo: t.TrackNo, DurationMS: t.DurationMS, BPM: t.BPM, AddedAt: t.AddedAt}
+		TrackNo: t.TrackNo, DurationMS: t.DurationMS, BPM: t.BPM, AddedAt: t.AddedAt,
+		ArtworkID: t.ArtworkID, Format: t.Format, BitrateKbps: t.BitrateKbps, SampleRate: t.SampleRate, BitDepth: t.BitDepth, Missing: t.Missing}
 	for _, a := range t.Artists {
 		d.Artists = append(d.Artists, ArtistRefDTO{ID: a.ID, Name: a.Name, Role: a.Role})
 	}
@@ -115,7 +125,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	for kind, hs := range hits {
 		list := make([]HitDTO, len(hs))
 		for i, h := range hs {
-			list[i] = HitDTO{ID: h.ID, Title: h.Title, Artist: h.Artist, Album: h.Album}
+			list[i] = HitDTO{ID: h.ID, Title: h.Title, Artist: h.Artist, Album: h.Album, AlbumID: h.AlbumID, ArtworkID: h.ArtworkID, DurationMS: h.DurationMS}
 		}
 		out[kind+"s"] = list
 	}
@@ -137,7 +147,7 @@ func (s *Server) listArtists(w http.ResponseWriter, r *http.Request) {
 	for i, a := range p.Items {
 		items[i] = ArtistDTO{ID: a.ID, Name: a.Name}
 	}
-	writeJSON(w, http.StatusOK, Paged[ArtistDTO]{Items: items, NextCursor: p.Next})
+	writeJSON(w, http.StatusOK, Paged[ArtistDTO]{Items: items, NextCursor: p.Next, Total: p.Total})
 }
 
 func (s *Server) getArtist(w http.ResponseWriter, r *http.Request) {
@@ -168,7 +178,7 @@ func (s *Server) listAlbums(w http.ResponseWriter, r *http.Request) {
 	for i, a := range p.Items {
 		items[i] = albumDTO(a)
 	}
-	writeJSON(w, http.StatusOK, Paged[AlbumDTO]{Items: items, NextCursor: p.Next})
+	writeJSON(w, http.StatusOK, Paged[AlbumDTO]{Items: items, NextCursor: p.Next, Total: p.Total})
 }
 
 func (s *Server) getAlbum(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +201,7 @@ func (s *Server) listTracks(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, Paged[TrackDTO]{Items: tracksDTO(p.Items), NextCursor: p.Next})
+	writeJSON(w, http.StatusOK, Paged[TrackDTO]{Items: tracksDTO(p.Items), NextCursor: p.Next, Total: p.Total})
 }
 
 func (s *Server) getTrack(w http.ResponseWriter, r *http.Request) {

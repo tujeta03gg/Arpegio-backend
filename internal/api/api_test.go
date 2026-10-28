@@ -46,7 +46,9 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { st.Close() })
 	bus := events.New()
 	cat := catalog.New(st, bus)
-	probe := func(context.Context, string) (metadata.Props, error) { return metadata.Props{DurationMS: 1000}, nil }
+	probe := func(context.Context, string) (metadata.Props, error) {
+		return metadata.Props{DurationMS: 1000, BitrateKbps: 320, SampleRate: 44100, BitDepth: 16, Channels: 2}, nil
+	}
 	lib := library.New(st, bus, cat, metadata.Reader{Probe: probe}, filepath.Join(t.TempDir(), "art"), nil)
 	q := queue.New(st, bus)
 	fp := &fakePlayer{}

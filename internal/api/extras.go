@@ -6,6 +6,7 @@ import (
 
 	"arpegio/internal/lyrics"
 	"arpegio/internal/playback"
+	"arpegio/internal/version"
 )
 
 // Lyrics is the part of lyrics.Service the API uses.
@@ -26,6 +27,7 @@ type LyricsDTO struct {
 func (s *Server) extraRoutes() {
 	s.add("GET /tracks/{id}/lyrics", s.getLyrics)
 	s.add("POST /radio", s.startRadio)
+	s.add("GET /version", s.getVersion)
 }
 
 func (s *Server) getLyrics(w http.ResponseWriter, r *http.Request) {
@@ -55,4 +57,9 @@ func (s *Server) startRadio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reply(w, r, s.Player.Play(r.Context(), playback.PlayRequest{Context: "radio:" + body.Seed}))
+}
+
+// getVersion answers GET /version for the Settings screen.
+func (s *Server) getVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, version.Get())
 }

@@ -8,7 +8,7 @@ servers:
 paths:
   /search:
     get:
-      summary: FTS5 search grouped by type
+      summary: "FTS5 search grouped by type (tracks, albums, artists). Each hit carries album_id, artwork_id and duration_ms where they apply."
       parameters:
         - {name: q, in: query, required: true, schema: {type: string}}
         - {name: types, in: query, schema: {type: string, example: "track,album,artist"}}
@@ -44,10 +44,10 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
   /tracks:
     get:
-      summary: List tracks
+      summary: "List tracks. Each track carries artwork_id, format, bitrate_kbps, sample_rate, bit_depth and missing; the page has items, next_cursor and total."
       parameters: [{$ref: "#/components/parameters/limit"}, {$ref: "#/components/parameters/cursor"}]
       responses:
-        "200": {description: Page of tracks}
+        "200": {description: "Page of tracks: {items, next_cursor, total}"}
   /tracks/{id}:
     get:
       summary: Track detail
@@ -375,7 +375,7 @@ paths:
         "400": {$ref: "#/components/responses/Error"}
   /home:
     get:
-      summary: Start screen - recently played, most played this month, recently added
+      summary: "Start screen - recently_played, most_played (30 days), recently_added tracks, recent_albums and playlists (latest updated first)"
       responses:
         "200": {description: Home}
   /radio:
@@ -389,6 +389,19 @@ paths:
         "200": {description: New player state}
         "400": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /queue/{position}/play:
+    post:
+      summary: Jump to a queue item (for example one under "up next") and play it
+      parameters: [{name: position, in: path, required: true, schema: {type: number}}]
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /version:
+    get:
+      summary: Server build - version, commit, Go version, OS and architecture
+      responses:
+        "200": {description: "{version, commit, go_version, os, arch}"}
   /events:
     get:
       summary: "WebSocket. First message is a snapshot; then player.state_changed, player.position (1/s), player.track_started, player.track_ended, queue.changed, library.scan_progress, library.scan_finished, library.file_added, library.file_removed, catalog.updated, playlist.changed, like.changed. Frames are {type, data, at}."
@@ -401,4 +414,4 @@ components:
     cursor: {name: cursor, in: query, schema: {type: string}}
   responses:
     Error:
-      description: 'Error body {"error":{"code":"not_found|invalid|conflict|unavailable|internal","message":"..."}}'
+      description: 'Error body {"error":{"code":"not_found|invalid|conflict|unavailable|busy|internal","message":"..."}}'

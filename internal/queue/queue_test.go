@@ -398,3 +398,27 @@ func TestStateSurvivesANewService(t *testing.T) {
 		t.Errorf("position = %v", cur.Position)
 	}
 }
+
+func TestSelectJumpsToAnyItem(t *testing.T) {
+	e := newEnv(t)
+	e.replace(0, "t1", "t2", "t3", "t4")
+	e.svc.Add(e.ctx, []string{"t9"}, true)
+
+	it, err := e.svc.Select(e.ctx, e.posOf("t9"))
+	if err != nil || it.TrackID != "t9" || it.Priority != 1 {
+		t.Fatalf("select = %+v %v", it, err)
+	}
+	eq(t, e.current(), "t9")
+	// playing continues from there: what follows t9 in the list is t2
+	next, ok, _ := e.svc.Next(e.ctx, true)
+	if !ok || next.TrackID != "t2" {
+		t.Errorf("after jumping, next = %v %v", next.TrackID, ok)
+	}
+	e.svc.Select(e.ctx, e.posOf("t1")) // and back
+	eq(t, e.current(), "t1")
+
+	if _, err := e.svc.Select(e.ctx, 4242); !errors.Is(err, apperr.ErrNotFound) {
+		t.Errorf("unknown position: %v", err)
+	}
+	eq(t, e.current(), "t1") // a failed jump changes nothing
+}

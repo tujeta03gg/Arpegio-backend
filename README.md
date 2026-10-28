@@ -46,3 +46,18 @@ consulta FTS5 de `catalog`, porque `sqlc` no entiende `MATCH` sobre tablas virtu
   hasta el siguiente `arpegio scan`.
 - La ingesta, el parseo de `ffprobe` y el IPC de mpv están probados con falsos; falta
   validarlos con `ffprobe` y `mpv` reales.
+
+## Desarrollo con el frontend web
+
+En `config.toml`, sección `[api]` (ambas opciones vienen apagadas):
+
+```toml
+allow_origin = "*"               # CORS, para un frontend servido desde otro origen
+web_dir = "frontend/build/web"   # el propio demonio sirve el frontend compilado en /
+```
+
+Con `web_dir` no hace falta proxy ni CORS: la app y la API comparten origen.
+
+En Windows el demonio habla con mpv por un *named pipe* (`\.\pipe\arpegio-mpv`), así que
+ya no hace falta WSL. En la Pi se sigue usando el socket Unix. El pipe está probado contra
+un mpv falso; falta probarlo con `mpv.exe` real.

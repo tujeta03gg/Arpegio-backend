@@ -6,6 +6,8 @@ watch = true
 [api]
 listen = "127.0.0.1:7600"
 socket = true
+# allow_origin = "*"          # CORS, only for development with a browser frontend
+# web_dir = "/srv/arpegio/web" # serve the built web frontend from the daemon itself
 
 [playback]
 audio_output = "pipewire"

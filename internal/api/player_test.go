@@ -31,7 +31,10 @@ func (f *fakePlayer) State(context.Context) (playback.State, error) { return f.s
 func (f *fakePlayer) Play(_ context.Context, r playback.PlayRequest) error {
 	return f.rec("play %q %q", r.Context, r.Start)
 }
-func (f *fakePlayer) Pause(context.Context) error                 { return f.rec("pause") }
+func (f *fakePlayer) Pause(context.Context) error { return f.rec("pause") }
+func (f *fakePlayer) PlayQueueItem(_ context.Context, pos float64) error {
+	return f.rec("playqueue %v", pos)
+}
 func (f *fakePlayer) Next(context.Context) error                  { return f.rec("next") }
 func (f *fakePlayer) Previous(context.Context) error              { return f.rec("previous") }
 func (f *fakePlayer) Seek(_ context.Context, ms int64) error      { return f.rec("seek %d", ms) }
@@ -230,5 +233,19 @@ func TestWebSocketSnapshotThenEvents(t *testing.T) {
 	pd := m.Data.(map[string]any)
 	if m.Type != "player.state_changed" || pd["volume"].(float64) != 80 || pd["playing"] != true || pd["repeat"] != "all" {
 		t.Errorf("state event = %+v", m)
+	}
+}
+
+func TestEngineBusyAnswers503WithAClearCode(t *testing.T) {
+	e := newEnv(t)
+	e.player.err = fmt.Errorf("mpv: seek: %w", playback.ErrBusy)
+	var body errBody
+	if code := e.do("PUT", "/player/position", map[string]int{"ms": 1000}, &body); code != 503 || body.Error.Code != "busy" || body.Error.Message == "" {
+		t.Errorf("busy engine = %d %+v", code, body)
+	}
+	// mpv missing stays a different, permanent-looking error
+	e.player.err = playback.ErrNotConnected
+	if code := e.do("PUT", "/player/position", map[string]int{"ms": 1000}, &body); code != 503 || body.Error.Code != "unavailable" {
+		t.Errorf("mpv missing = %d %+v", code, body)
 	}
 }

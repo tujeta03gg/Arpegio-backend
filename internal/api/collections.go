@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"sort"
 	"time"
 
 	"arpegio/internal/history"
@@ -72,9 +73,11 @@ type StatsDTO struct {
 }
 
 type HomeDTO struct {
-	RecentlyPlayed []TrackDTO `json:"recently_played"`
-	MostPlayed     []TrackDTO `json:"most_played"`
-	RecentlyAdded  []TrackDTO `json:"recently_added"`
+	RecentlyPlayed []TrackDTO    `json:"recently_played"`
+	MostPlayed     []TrackDTO    `json:"most_played"`
+	RecentlyAdded  []TrackDTO    `json:"recently_added"`
+	RecentAlbums   []AlbumDTO    `json:"recent_albums"`
+	Playlists      []PlaylistDTO `json:"playlists"`
 }
 
 func (s *Server) collectionRoutes() {
@@ -336,7 +339,8 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 // getHome builds the start screen: what was played lately, the most played of the month, and new additions.
 func (s *Server) getHome(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	home := HomeDTO{RecentlyPlayed: []TrackDTO{}, MostPlayed: []TrackDTO{}, RecentlyAdded: []TrackDTO{}}
+	home := HomeDTO{RecentlyPlayed: []TrackDTO{}, MostPlayed: []TrackDTO{}, RecentlyAdded: []TrackDTO{},
+		RecentAlbums: []AlbumDTO{}, Playlists: []PlaylistDTO{}}
 
 	entries, err := s.History.Recent(ctx, 50)
 	if err != nil {
@@ -375,5 +379,24 @@ func (s *Server) getHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	home.RecentlyAdded = tracksDTO(added)
+
+	albums, err := s.Catalog.RecentAlbums(ctx, 10)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	for _, a := range albums {
+		home.RecentAlbums = append(home.RecentAlbums, albumDTO(a))
+	}
+
+	lists, err := s.Playlists.List(ctx)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	sort.SliceStable(lists, func(i, j int) bool { return lists[i].UpdatedAt > lists[j].UpdatedAt })
+	for _, p := range lists[:min(10, len(lists))] {
+		home.Playlists = append(home.Playlists, playlistDTO(p))
+	}
 	writeJSON(w, http.StatusOK, home)
 }

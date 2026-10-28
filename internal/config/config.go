@@ -25,8 +25,10 @@ type Library struct {
 }
 
 type API struct {
-	Listen string `toml:"listen"`
-	Socket bool   `toml:"socket"`
+	Listen      string `toml:"listen"`
+	Socket      bool   `toml:"socket"`
+	AllowOrigin string `toml:"allow_origin"` // CORS: "*" or one origin; empty = off
+	WebDir      string `toml:"web_dir"`      // serve a built web frontend (e.g. build/web) at /; empty = off
 }
 
 type Playback struct {

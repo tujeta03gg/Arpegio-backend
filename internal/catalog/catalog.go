@@ -36,6 +36,12 @@ type Track struct {
 	BPM                 int
 	AddedAt             string
 	Album, Artist       string
+	ArtworkID           string
+	Format              string
+	BitrateKbps         int
+	SampleRate          int
+	BitDepth            int
+	Missing             bool        // the audio file is gone from disk
 	Artists             []ArtistRef // filled on detail only
 }
 
@@ -53,12 +59,18 @@ type Artist struct {
 
 type Genre struct{ ID, Name string }
 
-type Hit struct{ ID, Title, Artist, Album string }
+// Hit is one search result. AlbumID, DurationMS and ArtworkID are filled from the catalog after the text match.
+type Hit struct {
+	ID, Title, Artist, Album string
+	AlbumID, ArtworkID       string
+	DurationMS               int64
+}
 
 // Page is one page of a cursor-paginated list; Next is "" on the last page.
 type Page[T any] struct {
 	Items []T
 	Next  string
+	Total int // all items, not just this page
 }
 
 // TrackInput is what library hands over for one scanned file.
@@ -348,7 +360,13 @@ func (s *Service) Tracks(ctx context.Context, after string, limit int) (Page[Tra
 	for i, r := range rows {
 		items[i] = toTrack(db.GetTrackRow(r))
 	}
-	return page(items, limit, func(t Track) string { return t.ID }), nil
+	total, err := db.New(s.st.R).CountTracks(ctx)
+	if err != nil {
+		return Page[Track]{}, fmt.Errorf("catalog: count tracks: %w", err)
+	}
+	p := page(items, limit, func(t Track) string { return t.ID })
+	p.Total = int(total)
+	return p, nil
 }
 
 func (s *Service) Artists(ctx context.Context, after string, limit int) (Page[Artist], error) {
@@ -361,7 +379,13 @@ func (s *Service) Artists(ctx context.Context, after string, limit int) (Page[Ar
 	for i, r := range rows {
 		items[i] = Artist{ID: r.ID, Name: r.Name}
 	}
-	return page(items, limit, func(a Artist) string { return a.ID }), nil
+	total, err := db.New(s.st.R).CountArtists(ctx)
+	if err != nil {
+		return Page[Artist]{}, fmt.Errorf("catalog: count artists: %w", err)
+	}
+	p := page(items, limit, func(a Artist) string { return a.ID })
+	p.Total = int(total)
+	return p, nil
 }
 
 func (s *Service) Artist(ctx context.Context, id string) (Artist, error) {
@@ -399,7 +423,13 @@ func (s *Service) Albums(ctx context.Context, after string, limit int) (Page[Alb
 	for i, r := range rows {
 		items[i] = toAlbum(r, s.artistName(ctx, q, r.AlbumArtistID))
 	}
-	return page(items, limit, func(a Album) string { return a.ID }), nil
+	total, err := q.CountAlbums(ctx)
+	if err != nil {
+		return Page[Album]{}, fmt.Errorf("catalog: count albums: %w", err)
+	}
+	p := page(items, limit, func(a Album) string { return a.ID })
+	p.Total = int(total)
+	return p, nil
 }
 
 func (s *Service) Album(ctx context.Context, id string) (Album, error) {
@@ -491,6 +521,7 @@ func (s *Service) Search(ctx context.Context, text string, kinds []string, limit
 		if err := rows.Close(); err != nil {
 			return nil, fmt.Errorf("catalog: search: %w", err)
 		}
+		s.enrich(ctx, k, hits)
 		out[k] = hits
 	}
 	return out, nil
@@ -535,6 +566,8 @@ func toTrack(r db.GetTrackRow) Track {
 		ID: r.ID, FileID: r.FileID, AlbumID: r.AlbumID.String, Title: r.Title,
 		DiscNo: int(r.DiscNo.Int64), TrackNo: int(r.TrackNo.Int64), DurationMS: r.DurationMs,
 		BPM: int(r.Bpm.Int64), AddedAt: r.AddedAt, Album: r.AlbumTitle, Artist: r.ArtistNames,
+		ArtworkID: r.ArtworkID, Format: r.Format, BitrateKbps: int(r.BitrateKbps), SampleRate: int(r.SampleRate),
+		BitDepth: int(r.BitDepth), Missing: r.Missing != 0,
 	}
 }
 
@@ -573,4 +606,35 @@ func (s *Service) Exists(ctx context.Context, kind, id string) error {
 		return apperr.NotFound(err, "catalog: "+kind+" "+id)
 	}
 	return nil
+}
+
+// enrich fills the catalog fields a search row needs (album, duration, cover) that the FTS index does not hold.
+func (s *Service) enrich(ctx context.Context, kind string, hits []Hit) {
+	q := db.New(s.st.R)
+	for i := range hits {
+		switch kind {
+		case "track":
+			if t, err := q.GetTrack(ctx, hits[i].ID); err == nil {
+				hits[i].AlbumID, hits[i].ArtworkID, hits[i].DurationMS = t.AlbumID.String, t.ArtworkID, t.DurationMs
+			}
+		case "album":
+			if a, err := q.GetAlbum(ctx, hits[i].ID); err == nil {
+				hits[i].ArtworkID = a.ArtworkID.String
+			}
+		}
+	}
+}
+
+// RecentAlbums lists albums by when their newest track was added, newest first.
+func (s *Service) RecentAlbums(ctx context.Context, limit int) ([]Album, error) {
+	q := db.New(s.st.R)
+	rows, err := q.ListRecentAlbums(ctx, int64(clampLimit(limit)))
+	if err != nil {
+		return nil, fmt.Errorf("catalog: recent albums: %w", err)
+	}
+	out := make([]Album, len(rows))
+	for i, r := range rows {
+		out[i] = toAlbum(r, s.artistName(ctx, q, r.AlbumArtistID))
+	}
+	return out, nil
 }

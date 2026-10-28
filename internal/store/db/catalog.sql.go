@@ -10,6 +10,39 @@ import (
 	"database/sql"
 )
 
+const countAlbums = `-- name: CountAlbums :one
+SELECT COUNT(*) FROM albums
+`
+
+func (q *Queries) CountAlbums(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAlbums)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countArtists = `-- name: CountArtists :one
+SELECT COUNT(*) FROM artists
+`
+
+func (q *Queries) CountArtists(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countArtists)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTracks = `-- name: CountTracks :one
+SELECT COUNT(*) FROM tracks t JOIN files f ON f.id = t.file_id WHERE f.missing = 0
+`
+
+func (q *Queries) CountTracks(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTracks)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteSearchRef = `-- name: DeleteSearchRef :exec
 DELETE FROM search_index WHERE kind = ? AND ref_id = ?
 `
@@ -134,9 +167,17 @@ const getTrack = `-- name: GetTrack :one
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
-FROM tracks t LEFT JOIN albums al ON al.id = t.album_id
+FROM tracks t
+JOIN files f ON f.id = t.file_id
+LEFT JOIN albums al ON al.id = t.album_id
 WHERE t.id = ?
 `
 
@@ -153,6 +194,12 @@ type GetTrackRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -172,6 +219,12 @@ func (q *Queries) GetTrack(ctx context.Context, id string) (GetTrackRow, error) 
 		&i.ReplaygainTrackDb,
 		&i.ReplaygainAlbumDb,
 		&i.AlbumTitle,
+		&i.ArtworkID,
+		&i.Format,
+		&i.BitrateKbps,
+		&i.SampleRate,
+		&i.BitDepth,
+		&i.Missing,
 		&i.ArtistNames,
 	)
 	return i, err
@@ -504,10 +557,57 @@ func (q *Queries) ListGenres(ctx context.Context) ([]Genre, error) {
 	return items, nil
 }
 
+const listRecentAlbums = `-- name: ListRecentAlbums :many
+SELECT al.id, al.title, al.album_artist_id, al.year, al.album_type, al.artwork_id, al.mbid FROM albums al
+JOIN tracks t ON t.album_id = al.id
+JOIN files f ON f.id = t.file_id
+WHERE f.missing = 0
+GROUP BY al.id
+ORDER BY MAX(t.added_at) DESC, al.id DESC
+LIMIT ?
+`
+
+func (q *Queries) ListRecentAlbums(ctx context.Context, limit int64) ([]Album, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentAlbums, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Album
+	for rows.Next() {
+		var i Album
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.AlbumArtistID,
+			&i.Year,
+			&i.AlbumType,
+			&i.ArtworkID,
+			&i.Mbid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentTracks = `-- name: ListRecentTracks :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -530,6 +630,12 @@ type ListRecentTracksRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -555,6 +661,12 @@ func (q *Queries) ListRecentTracks(ctx context.Context, limit int64) ([]ListRece
 			&i.ReplaygainTrackDb,
 			&i.ReplaygainAlbumDb,
 			&i.AlbumTitle,
+			&i.ArtworkID,
+			&i.Format,
+			&i.BitrateKbps,
+			&i.SampleRate,
+			&i.BitDepth,
+			&i.Missing,
 			&i.ArtistNames,
 		); err != nil {
 			return nil, err
@@ -609,6 +721,12 @@ const listTracks = `-- name: ListTracks :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -636,6 +754,12 @@ type ListTracksRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -661,6 +785,12 @@ func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListT
 			&i.ReplaygainTrackDb,
 			&i.ReplaygainAlbumDb,
 			&i.AlbumTitle,
+			&i.ArtworkID,
+			&i.Format,
+			&i.BitrateKbps,
+			&i.SampleRate,
+			&i.BitDepth,
+			&i.Missing,
 			&i.ArtistNames,
 		); err != nil {
 			return nil, err
@@ -680,6 +810,12 @@ const listTracksByAlbum = `-- name: ListTracksByAlbum :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -702,6 +838,12 @@ type ListTracksByAlbumRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -727,6 +869,12 @@ func (q *Queries) ListTracksByAlbum(ctx context.Context, albumID sql.NullString)
 			&i.ReplaygainTrackDb,
 			&i.ReplaygainAlbumDb,
 			&i.AlbumTitle,
+			&i.ArtworkID,
+			&i.Format,
+			&i.BitrateKbps,
+			&i.SampleRate,
+			&i.BitDepth,
+			&i.Missing,
 			&i.ArtistNames,
 		); err != nil {
 			return nil, err
@@ -746,6 +894,12 @@ const listTracksByArtist = `-- name: ListTracksByArtist :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -769,6 +923,12 @@ type ListTracksByArtistRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -794,6 +954,12 @@ func (q *Queries) ListTracksByArtist(ctx context.Context, artistID string) ([]Li
 			&i.ReplaygainTrackDb,
 			&i.ReplaygainAlbumDb,
 			&i.AlbumTitle,
+			&i.ArtworkID,
+			&i.Format,
+			&i.BitrateKbps,
+			&i.SampleRate,
+			&i.BitDepth,
+			&i.Missing,
 			&i.ArtistNames,
 		); err != nil {
 			return nil, err
@@ -813,6 +979,12 @@ const listTracksByGenre = `-- name: ListTracksByGenre :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -836,6 +1008,12 @@ type ListTracksByGenreRow struct {
 	ReplaygainTrackDb sql.NullFloat64
 	ReplaygainAlbumDb sql.NullFloat64
 	AlbumTitle        string
+	ArtworkID         string
+	Format            string
+	BitrateKbps       int64
+	SampleRate        int64
+	BitDepth          int64
+	Missing           int64
 	ArtistNames       string
 }
 
@@ -861,6 +1039,12 @@ func (q *Queries) ListTracksByGenre(ctx context.Context, genreID string) ([]List
 			&i.ReplaygainTrackDb,
 			&i.ReplaygainAlbumDb,
 			&i.AlbumTitle,
+			&i.ArtworkID,
+			&i.Format,
+			&i.BitrateKbps,
+			&i.SampleRate,
+			&i.BitDepth,
+			&i.Missing,
 			&i.ArtistNames,
 		); err != nil {
 			return nil, err

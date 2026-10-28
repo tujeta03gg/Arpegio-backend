@@ -32,6 +32,7 @@ type Queue interface {
 	Next(ctx context.Context, auto bool) (queue.Item, bool, error)
 	Previous(ctx context.Context) (queue.Item, bool, error)
 	Peek(ctx context.Context) (queue.Item, bool, error)
+	Select(ctx context.Context, position float64) (queue.Item, error)
 	State(ctx context.Context) (queue.State, error)
 	Remaining(ctx context.Context) (int, error)
 	Extend(ctx context.Context, ids []string, source, sourceID string) error
@@ -645,4 +646,15 @@ func (s *Service) publishState(ctx context.Context) {
 // Resolve expands a context spec ("album:ID") into tracks; the API uses it to queue whole albums.
 func (s *Service) Resolve(ctx context.Context, spec string) (PlayContext, error) {
 	return s.Contexts.Resolve(ctx, spec)
+}
+
+// PlayQueueItem jumps to the queue item at position and plays it.
+func (s *Service) PlayQueueItem(ctx context.Context, position float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, err := s.Queue.Select(ctx, position)
+	if err != nil {
+		return err
+	}
+	return s.startItem(ctx, item)
 }

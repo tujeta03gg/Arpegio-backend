@@ -10,12 +10,25 @@ import (
 	"math"
 	"net"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
 
 // ErrNotConnected means mpv is not running (yet, or it is being restarted).
 var ErrNotConnected = errors.New("playback: mpv is not connected")
+
+// ErrBusy means mpv is alive but could not do the command right now (still loading a file,
+// or it did not answer in time). Trying again a moment later normally works.
+var ErrBusy = errors.New("playback: audio engine is busy")
+
+// How long the engine waits on mpv before giving up. A variable so tests can shorten it.
+var (
+	commandTimeout = 2 * time.Second        // any single mpv command
+	loadWait       = 2 * time.Second        // for mpv to announce a new file is open
+	seekRetries    = 5                      // extra seek attempts while mpv still says "error running command"
+	seekRetryEvery = 100 * time.Millisecond // pause between those attempts
+)
 
 // ---- JSON IPC connection ----
 
@@ -153,17 +166,23 @@ func (c *conn) command(ctx context.Context, args ...any) (json.RawMessage, error
 	if err != nil {
 		return nil, fmt.Errorf("mpv: write %v: %w", args[0], err)
 	}
+	wait, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
 	select {
 	case r := <-ch:
 		if r.Err != "success" {
 			return nil, fmt.Errorf("mpv: %v: %s", args[0], r.Err)
 		}
 		return r.Data, nil
-	case <-ctx.Done():
+	case <-wait.Done():
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-		return nil, fmt.Errorf("mpv: %v: %w", args[0], ctx.Err())
+		if ctx.Err() != nil { // the caller gave up
+			return nil, fmt.Errorf("mpv: %v: %w", args[0], ctx.Err())
+		}
+		// mpv did not answer in time: fail fast instead of freezing the player
+		return nil, fmt.Errorf("mpv: %v: no answer after %s: %w", args[0], commandTimeout, ErrBusy)
 	}
 }
 
@@ -189,10 +208,11 @@ type MPVOptions struct {
 
 // MPV runs mpv as a child process, talks to it over IPC and restarts it if it dies.
 type MPV struct {
-	opts   MPVOptions
-	events chan EngineEvent
-	mu     sync.Mutex
-	c      *conn
+	opts    MPVOptions
+	events  chan EngineEvent
+	mu      sync.Mutex
+	c       *conn
+	loading <-chan struct{} // closed when the file passed to the last Load has opened
 }
 
 func NewMPV(o MPVOptions) *MPV {
@@ -211,7 +231,7 @@ func NewMPV(o MPVOptions) *MPV {
 	}
 	if o.Dial == nil {
 		m.opts.Dial = func(ctx context.Context) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", o.Socket)
+			return dialIPC(ctx, o.Socket)
 		}
 	}
 	return m
@@ -350,24 +370,36 @@ func (m *MPV) Load(ctx context.Context, path string, startMS int64, paused bool)
 	if _, err := c.command(ctx, "set_property", "pause", paused); err != nil {
 		return err
 	}
-	var loaded <-chan struct{}
-	if startMS > 0 {
-		loaded = c.expect("file-loaded")
-	}
+	// Remember when this file finishes opening: seeks sent before that fail inside mpv.
+	loaded := c.expect("file-loaded")
+	m.mu.Lock()
+	m.loading = loaded
+	m.mu.Unlock()
 	if _, err := c.command(ctx, "loadfile", path, "replace"); err != nil {
+		m.mu.Lock()
+		m.loading = nil
+		m.mu.Unlock()
 		return err
 	}
 	if startMS > 0 { // loadfile options differ between mpv versions, so seek once the file is open
-		select {
-		case <-loaded:
-		case <-time.After(3 * time.Second):
-			return errors.New("mpv: file did not open in time")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
 		return m.Seek(ctx, startMS)
 	}
 	return nil
+}
+
+// waitLoaded blocks (briefly) while a file that was just loaded is still opening.
+func (m *MPV) waitLoaded(ctx context.Context) {
+	m.mu.Lock()
+	loading := m.loading
+	m.mu.Unlock()
+	if loading == nil {
+		return
+	}
+	select {
+	case <-loading:
+	case <-time.After(loadWait):
+	case <-ctx.Done():
+	}
 }
 
 func (m *MPV) Preload(ctx context.Context, path string) error {
@@ -380,9 +412,27 @@ func (m *MPV) SetPause(ctx context.Context, paused bool) error {
 	return m.cmd(ctx, "set_property", "pause", paused)
 }
 
+// Seek jumps to ms. Right after a track change mpv may still be opening the file and
+// rejects the command with "error running command"; the seek waits for the file to open and,
+// if mpv still says no, retries briefly before reporting ErrBusy.
 func (m *MPV) Seek(ctx context.Context, ms int64) error {
-	return m.cmd(ctx, "seek", float64(ms)/1000, "absolute+exact")
+	m.waitLoaded(ctx)
+	var err error
+	for attempt := 0; attempt <= seekRetries; attempt++ {
+		if err = m.cmd(ctx, "seek", float64(ms)/1000, "absolute+exact"); err == nil || !notReady(err) {
+			return err
+		}
+		select {
+		case <-time.After(seekRetryEvery):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return fmt.Errorf("%w: %v", ErrBusy, err)
 }
+
+// notReady recognizes mpv refusing a command because no file is ready yet.
+func notReady(err error) bool { return strings.Contains(err.Error(), "error running command") }
 
 func (m *MPV) SetVolume(ctx context.Context, level int) error {
 	return m.cmd(ctx, "set_property", "volume", level)

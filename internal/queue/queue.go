@@ -508,3 +508,22 @@ func (s *Service) SetRepeat(ctx context.Context, mode string) error {
 	}
 	return s.tx(ctx, func(q *db.Queries) error { return q.SetRepeatMode(ctx, mode) })
 }
+
+// Select makes the item at position the current one (jumping to it from "up next" or anywhere in the list).
+func (s *Service) Select(ctx context.Context, position float64) (Item, error) {
+	var out Item
+	err := s.tx(ctx, func(q *db.Queries) error {
+		st, err := load(ctx, q)
+		if err != nil {
+			return err
+		}
+		for _, it := range st.Items {
+			if it.Position == position {
+				out = it
+				return q.SetCurrentPos(ctx, sql.NullFloat64{Float64: position, Valid: true})
+			}
+		}
+		return apperr.NotFound(sql.ErrNoRows, fmt.Sprintf("queue: position %v", position))
+	})
+	return out, err
+}

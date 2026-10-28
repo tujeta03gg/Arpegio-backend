@@ -62,3 +62,16 @@ func TestLoadErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadDevelopmentOptionsOfTheAPI(t *testing.T) {
+	cfg, err := Load(write(t, "[api]\nallow_origin = \"*\"\nweb_dir = \"/srv/arpegio/web\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.API.AllowOrigin != "*" || cfg.API.WebDir != "/srv/arpegio/web" || cfg.API.Listen != "127.0.0.1:7600" {
+		t.Errorf("api = %+v", cfg.API)
+	}
+	if d := Default().API; d.AllowOrigin != "" || d.WebDir != "" {
+		t.Errorf("development options must be off by default: %+v", d)
+	}
+}

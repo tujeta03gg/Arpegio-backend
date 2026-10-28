@@ -79,15 +79,29 @@ WHERE ta.track_id = ? ORDER BY ta.position;
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
-FROM tracks t LEFT JOIN albums al ON al.id = t.album_id
+FROM tracks t
+JOIN files f ON f.id = t.file_id
+LEFT JOIN albums al ON al.id = t.album_id
 WHERE t.id = ?;
 
 -- name: ListTracks :many
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -100,6 +114,12 @@ ORDER BY t.id LIMIT sqlc.arg(lim);
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -112,6 +132,12 @@ ORDER BY COALESCE(t.disc_no, 1), COALESCE(t.track_no, 0), t.title;
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -125,6 +151,12 @@ ORDER BY t.title;
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -150,6 +182,12 @@ INSERT INTO search_index (kind, ref_id, title, artist, album) VALUES (?, ?, ?, ?
 SELECT t.id, t.file_id, t.album_id, t.title, t.disc_no, t.track_no, t.duration_ms,
   t.bpm, t.added_at, t.replaygain_track_db, t.replaygain_album_db,
   COALESCE(al.title, '') AS album_title,
+  COALESCE(al.artwork_id, '') AS artwork_id,
+  f.format AS format,
+  CAST(COALESCE(f.bitrate_kbps, 0) AS INTEGER) AS bitrate_kbps,
+  CAST(COALESCE(f.sample_rate, 0) AS INTEGER) AS sample_rate,
+  CAST(COALESCE(f.bit_depth, 0) AS INTEGER) AS bit_depth,
+  f.missing AS missing,
   CAST(COALESCE((SELECT group_concat(a.name, ', ') FROM track_artists ta JOIN artists a ON a.id = ta.artist_id
     WHERE ta.track_id = t.id AND ta.role = 'main'), '') AS TEXT) AS artist_names
 FROM tracks t
@@ -157,3 +195,21 @@ JOIN files f ON f.id = t.file_id
 LEFT JOIN albums al ON al.id = t.album_id
 WHERE f.missing = 0
 ORDER BY t.added_at DESC, t.id DESC LIMIT ?;
+
+-- name: CountTracks :one
+SELECT COUNT(*) FROM tracks t JOIN files f ON f.id = t.file_id WHERE f.missing = 0;
+
+-- name: CountArtists :one
+SELECT COUNT(*) FROM artists;
+
+-- name: CountAlbums :one
+SELECT COUNT(*) FROM albums;
+
+-- name: ListRecentAlbums :many
+SELECT al.* FROM albums al
+JOIN tracks t ON t.album_id = al.id
+JOIN files f ON f.id = t.file_id
+WHERE f.missing = 0
+GROUP BY al.id
+ORDER BY MAX(t.added_at) DESC, al.id DESC
+LIMIT ?;
