@@ -1,0 +1,12 @@
+# ~/.config/systemd/user/arpegiod.service
+[Unit]
+Description=Arpegio music daemon
+After=pipewire.service
+
+[Service]
+ExecStart=%h/.local/bin/arpegiod
+Restart=on-failure
+Nice=5
+
+[Install]
+WantedBy=default.target

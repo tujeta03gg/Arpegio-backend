@@ -1,0 +1,24 @@
+[library]
+roots = ["/media/music"]
+import_dir = "/media/music/_importados"
+watch = true
+
+[api]
+listen = "127.0.0.1:7600"
+socket = true
+
+[playback]
+audio_output = "pipewire"
+gapless = true
+replaygain = "album"      # off, track, album
+crossfade_seconds = 0
+
+[history]
+min_listen_seconds = 30
+min_listen_percent = 50
+
+[enrichment]
+musicbrainz = false
+
+[hardware]
+gpio = false

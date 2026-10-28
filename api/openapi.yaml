@@ -1,0 +1,404 @@
+openapi: 3.1.0
+info:
+  title: Arpegio API
+  version: 0.1.0
+  description: Local single-user music daemon. Listens on 127.0.0.1:7600 and $XDG_RUNTIME_DIR/arpegio.sock.
+servers:
+  - url: http://127.0.0.1:7600/api/v1
+paths:
+  /search:
+    get:
+      summary: FTS5 search grouped by type
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+        - {name: types, in: query, schema: {type: string, example: "track,album,artist"}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses:
+        "200": {description: Hits grouped as tracks, albums, artists}
+        "400": {$ref: "#/components/responses/Error"}
+  /artists:
+    get:
+      summary: List artists
+      parameters: [{$ref: "#/components/parameters/limit"}, {$ref: "#/components/parameters/cursor"}]
+      responses:
+        "200": {description: Page of artists}
+  /artists/{id}:
+    get:
+      summary: Artist detail with albums and tracks
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Artist}
+        "404": {$ref: "#/components/responses/Error"}
+  /albums:
+    get:
+      summary: List albums
+      parameters: [{$ref: "#/components/parameters/limit"}, {$ref: "#/components/parameters/cursor"}]
+      responses:
+        "200": {description: Page of albums}
+  /albums/{id}:
+    get:
+      summary: Album detail with tracks
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Album}
+        "404": {$ref: "#/components/responses/Error"}
+  /tracks:
+    get:
+      summary: List tracks
+      parameters: [{$ref: "#/components/parameters/limit"}, {$ref: "#/components/parameters/cursor"}]
+      responses:
+        "200": {description: Page of tracks}
+  /tracks/{id}:
+    get:
+      summary: Track detail
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Track}
+        "404": {$ref: "#/components/responses/Error"}
+    patch:
+      summary: Edit metadata (stored as overrides, survives rescans)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                track_no: {type: integer}
+                disc_no: {type: integer}
+      responses:
+        "200": {description: Updated track}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /tracks/{id}/lyrics:
+    get:
+      summary: Lyrics from a .lrc next to the audio; lines carry time_ms when synchronized
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Lyrics}
+        "404": {$ref: "#/components/responses/Error"}
+  /tracks/{id}/stream:
+    get:
+      summary: Original audio file, supports Range
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Audio bytes}
+        "206": {description: Partial content}
+        "404": {$ref: "#/components/responses/Error"}
+  /genres:
+    get:
+      summary: List genres
+      responses:
+        "200": {description: Genres}
+  /genres/{id}/tracks:
+    get:
+      summary: Tracks of a genre
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Tracks}
+  /artwork/{id}:
+    get:
+      summary: Cover image; size 96, 300 or 600 returns a cached thumbnail
+      parameters:
+        - {$ref: "#/components/parameters/id"}
+        - {name: size, in: query, schema: {type: integer, enum: [0, 96, 300, 600]}}
+      responses:
+        "200": {description: Image}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /library/roots:
+    get:
+      summary: Watched folders
+      responses:
+        "200": {description: Roots}
+    post:
+      summary: Watch a folder
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [path], properties: {path: {type: string}}}
+      responses:
+        "201": {description: Root}
+        "400": {$ref: "#/components/responses/Error"}
+  /library/roots/{id}:
+    delete:
+      summary: Stop watching a folder (files are marked missing, never deleted)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Removed}
+        "404": {$ref: "#/components/responses/Error"}
+  /library/scan:
+    post:
+      summary: Start a scan in the background
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, properties: {root_id: {type: string}}}
+      responses:
+        "202": {description: Started}
+        "409": {$ref: "#/components/responses/Error"}
+  /library/import:
+    post:
+      summary: Upload audio files (multipart/form-data, field "files") into the import folder; they are ingested in the background
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: {type: object, properties: {files: {type: array, items: {type: string, format: binary}}}}
+      responses:
+        "201": {description: "Files stored; per-file problems are listed under errors"}
+        "400": {$ref: "#/components/responses/Error"}
+  /library/status:
+    get:
+      summary: Scan progress and pending background jobs
+      responses:
+        "200": {description: Status}
+  /player:
+    get:
+      summary: Full player state (track, position, volume, shuffle, repeat)
+      responses:
+        "200": {description: Player state}
+  /player/play:
+    post:
+      summary: Resume, or play a context such as album:ID starting at track:ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context: {type: string, example: "album:01J..."}
+                start: {type: string, example: "track:01J..."}
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+  /player/pause:
+    post:
+      summary: Pause
+      responses:
+        "200": {description: New player state}
+  /player/next:
+    post:
+      summary: Skip to the next track
+      responses:
+        "200": {description: New player state}
+  /player/previous:
+    post:
+      summary: Restart the track, or go back when it just started
+      responses:
+        "200": {description: New player state}
+  /player/position:
+    put:
+      summary: Seek
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [ms], properties: {ms: {type: integer}}}
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+  /player/volume:
+    put:
+      summary: Set volume 0-100
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [level], properties: {level: {type: integer, minimum: 0, maximum: 100}}}
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+  /player/shuffle:
+    put:
+      summary: Turn shuffle on or off
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [enabled], properties: {enabled: {type: boolean}}}
+      responses:
+        "200": {description: New player state}
+  /player/repeat:
+    put:
+      summary: Set repeat mode
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [mode], properties: {mode: {type: string, enum: [off, all, one]}}}
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+  /queue:
+    get:
+      summary: Current queue with the selected item flagged
+      responses:
+        "200": {description: Queue}
+    post:
+      summary: Add tracks (or a whole context) to the end, or right after the current track with next=true
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                track_ids: {type: array, items: {type: string}}
+                context: {type: string}
+                next: {type: boolean}
+      responses:
+        "200": {description: Queue}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Clear the queue, keeping the selected track
+      responses:
+        "200": {description: Queue}
+  /queue/{position}:
+    patch:
+      summary: Move an item to a list index
+      parameters: [{name: position, in: path, required: true, schema: {type: number}}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [index], properties: {index: {type: integer}}}
+      responses:
+        "200": {description: Queue}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove an item (not the one playing)
+      parameters: [{name: position, in: path, required: true, schema: {type: number}}]
+      responses:
+        "200": {description: Queue}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /playlists:
+    get:
+      summary: List playlists with item counts
+      responses:
+        "200": {description: Playlists}
+    post:
+      summary: Create a playlist
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [name], properties: {name: {type: string}, description: {type: string}}}
+      responses:
+        "201": {description: Playlist}
+        "400": {$ref: "#/components/responses/Error"}
+  /playlists/{id}:
+    get:
+      summary: Playlist with its tracks in order
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "200": {description: Playlist}
+        "404": {$ref: "#/components/responses/Error"}
+    patch:
+      summary: Rename or change the description
+      parameters: [{$ref: "#/components/parameters/id"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, properties: {name: {type: string}, description: {type: string}}}
+      responses:
+        "200": {description: Playlist}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Delete a playlist (tracks are untouched)
+      parameters: [{$ref: "#/components/parameters/id"}]
+      responses:
+        "204": {description: Deleted}
+        "404": {$ref: "#/components/responses/Error"}
+  /playlists/{id}/items:
+    post:
+      summary: Append tracks
+      parameters: [{$ref: "#/components/parameters/id"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [track_ids], properties: {track_ids: {type: array, items: {type: string}}}}
+      responses:
+        "200": {description: Playlist}
+        "404": {$ref: "#/components/responses/Error"}
+    patch:
+      summary: Move an item to a list index
+      parameters: [{$ref: "#/components/parameters/id"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [position, index], properties: {position: {type: number}, index: {type: integer}}}
+      responses:
+        "200": {description: Playlist}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove the item at a position
+      parameters: [{$ref: "#/components/parameters/id"}]
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [position], properties: {position: {type: number}}}
+      responses:
+        "200": {description: Playlist}
+        "404": {$ref: "#/components/responses/Error"}
+  /likes:
+    get:
+      summary: Favourites of one kind (default track) as full objects
+      parameters: [{name: kind, in: query, schema: {type: string, enum: [track, album, artist]}}]
+      responses:
+        "200": {description: Liked items}
+        "400": {$ref: "#/components/responses/Error"}
+  /likes/{kind}/{id}:
+    put:
+      summary: Like a track, album or artist (idempotent)
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [track, album, artist]}}
+        - {$ref: "#/components/parameters/id"}
+      responses:
+        "204": {description: Liked}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      summary: Remove a like (idempotent)
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [track, album, artist]}}
+        - {$ref: "#/components/parameters/id"}
+      responses:
+        "204": {description: Removed}
+  /history:
+    get:
+      summary: Recent plays, newest first
+      parameters: [{$ref: "#/components/parameters/limit"}]
+      responses:
+        "200": {description: Plays}
+  /stats:
+    get:
+      summary: Listening totals and top tracks, artists and genres
+      parameters: [{name: range, in: query, schema: {type: string, default: 30d, example: "30d"}}]
+      responses:
+        "200": {description: Stats}
+        "400": {$ref: "#/components/responses/Error"}
+  /home:
+    get:
+      summary: Start screen - recently played, most played this month, recently added
+      responses:
+        "200": {description: Home}
+  /radio:
+    post:
+      summary: Start an endless radio from a seed (track:ID, artist:ID or genre:ID)
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, required: [seed], properties: {seed: {type: string, example: "track:01J..."}}}
+      responses:
+        "200": {description: New player state}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /events:
+    get:
+      summary: "WebSocket. First message is a snapshot; then player.state_changed, player.position (1/s), player.track_started, player.track_ended, queue.changed, library.scan_progress, library.scan_finished, library.file_added, library.file_removed, catalog.updated, playlist.changed, like.changed. Frames are {type, data, at}."
+      responses:
+        "101": {description: Switching protocols}
+components:
+  parameters:
+    id: {name: id, in: path, required: true, schema: {type: string}}
+    limit: {name: limit, in: query, schema: {type: integer, default: 50, maximum: 500}}
+    cursor: {name: cursor, in: query, schema: {type: string}}
+  responses:
+    Error:
+      description: 'Error body {"error":{"code":"not_found|invalid|conflict|unavailable|internal","message":"..."}}'
